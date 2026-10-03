@@ -1,7 +1,7 @@
 // Draws the game state. Logic never touches Three.js; this file reads `g` and reacts to g.events.
 import * as THREE from 'three';
 import {
-  ITEMS, AREAS, PLACES, STATIONS, SPOTS, TABLES, STATION_LABELS, SELL_PAD, BOAT,
+  ITEMS, AREAS, PLACES, STATIONS, SPOTS, TABLES, STATION_LABELS, SELL_PAD, BOAT, FISH, DOCK, CASHIER,
 } from './config.js';
 import { ADS_ENABLED } from './ads.js';
 import { visiblePads, padPos, ZONE, TABLE_ZONE, upgradePads, level } from './logic.js';
@@ -68,9 +68,12 @@ const RIGS = {
   runner: { shirt: 0xffffff, apron: 0xf4a261, hat: 'chef' },
   server: { shirt: 0x2b2d42, pants: 0x2b2d42, apron: 0xffffff, hat: 0x2a9d8f },
   busser: { shirt: 0xadb5bd, apron: 0x6c757d, hat: 0x6c757d },
+  chef: { shirt: 0xffffff, apron: 0x2a9d8f, hat: 'chef' },
+  cashier: { shirt: 0xffd23f, pants: 0x2b2d42, hat: 0xe63946 },
+  washer: { shirt: 0x90e0ef, apron: 0x0077b6, hat: 0x0077b6 },
 };
-const HELPER_NAMES = { fisher: 'FISHER', runner: 'RUNNER', server: 'SERVER', busser: 'BUSSER' };
-const SPOT_NAMES = { sardine: 'SARDINES', tuna: 'TUNA', squid: 'GIANT SQUID' };
+const HELPER_NAMES = { fisher: 'FISHER', runner: 'RUNNER', server: 'SERVER', busser: 'BUSSER', chef: 'CHEF', cashier: 'CASHIER', washer: 'DISHWASHER' };
+const SPOT_NAMES = { sardine: 'SARDINES', salmon: 'SALMON', tuna: 'TUNA', crab: 'CRAB TRAP', lobster: 'LOBSTER TRAP', octopus: 'OCTOPUS', squid: 'GIANT SQUID' };
 
 export function createRenderer(g, scene, { popup }) {
   const rng = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
@@ -131,7 +134,7 @@ export function createRenderer(g, scene, { popup }) {
   for (let i = 0; i < 14; i++) {
     const p = M.palm(rng);
     const side = i % 2 ? 1 : -1;
-    p.position.set(side * (31 + rng() * 6), 0, 2 + rng() * 32);
+    p.position.set(side * (43 + rng() * 6), 0, 2 + rng() * 32);
     p.rotation.y = rng() * 6;
     scene.add(p);
   }
@@ -157,7 +160,9 @@ export function createRenderer(g, scene, { popup }) {
   const hide = (id) => hidden[id] || 0;
   const pileY = (list, i, base) => { let y = base; for (let k = 0; k < i; k++) y += M.ITEM_H[list[k]] || 0.2; return y; };
 
-  function syncPile(holder, list, place, hiddenN, key) {
+  function syncPile(holder, full, place, hiddenN, key) {
+    const list = full.length > MAX_SHOWN ? full.slice(0, MAX_SHOWN) : full;
+    hiddenN = Math.max(0, hiddenN - (full.length - list.length));
     const want = list.join('|');
     if (holder.key !== want) {
       for (const m of holder.meshes) holder.parent.remove(m);
@@ -178,14 +183,31 @@ export function createRenderer(g, scene, { popup }) {
     const label = sprite([{ text: STATION_LABELS[cfg.type], size: 80 }], 3.8);
     label.position.set(cfg.x, 3.1, cfg.z);
     scene.add(label);
-    const inR = ring(ZONE, 0x5ad1ff); inR.position.set(cfg.in.x, 0.12, cfg.in.z);
+    if (cfg.in) { const inR = ring(ZONE, 0x5ad1ff); inR.position.set(cfg.in.x, 0.12, cfg.in.z); scene.add(inR); }
     const outR = ring(ZONE, 0x7ee07e); outR.position.set(cfg.out.x, 0.12, cfg.out.z);
-    scene.add(inR, outR);
+    scene.add(outR);
+    if (cfg.type === 'dock') label.position.set(cfg.out.x, 3.1, cfg.out.z - 1.5);
     const inPile = { parent: scene, meshes: [], key: '' }, outPile = { parent: scene, meshes: [], key: '' }, busy = { parent: scene, meshes: [], key: '' };
     stations[id] = { group, anim, inPile, outPile, busy, cfg, smokeT: 0, lastChop: 0 };
     pops.push({ obj: group, t: 0 });
   }
-  const pileAt = (cfg, side) => ({ x: cfg.x + (cfg[side].x - cfg.x) * 0.38, z: cfg.z });
+  // Where each station's piles sit. Tall stations keep them on the sand beside; the dock stacks crates on its planks.
+  const PILE = { smoker: [0.64, 0.25], steam: [0.64, 0.25], bakery: [0.7, 0.25] };
+  function pileBase(cfg, side) {
+    if (cfg.type === 'dock') return { x: cfg.out.x, y: 0.12, z: cfg.out.z - 2.4, dir: 1 };
+    const [f, y] = PILE[cfg.type] || [0.38, 1.12];
+    return { x: cfg.x + (cfg[side].x - cfg.x) * f, y, z: cfg.z, dir: Math.sign(cfg[side].x - cfg.x) || 1 };
+  }
+  // Long piles wrap into up to four side-by-side columns of 12 so huge upgraded buffers stay readable
+  const COL = 12, MAX_SHOWN = 48;
+  const COLS = [[0, 0], [0, 0.55], [0.5, -0.4], [0.5, 0.95]];
+  function pilePos(base, list, i) {
+    const c = Math.floor(i / COL) % 4, start = Math.floor(i / COL) * COL;
+    let y = base.y;
+    for (let k = start; k < i; k++) y += M.ITEM_H[list[k]] || 0.2;
+    return new THREE.Vector3(base.x + COLS[c][0] * base.dir, y, base.z + COLS[c][1]);
+  }
+  const pileAt = (cfg, side) => pileBase(cfg, side);
 
   // Fishing spots
   const spots = {};
@@ -195,9 +217,12 @@ export function createRenderer(g, scene, { popup }) {
     const r = ring(ZONE, 0x5ad1ff); r.position.set(s.x, 0.12, s.z);
     const label = sprite([{ text: SPOT_NAMES[s.fish], size: 80 }], 3.6, { bg: 'rgba(29,53,87,0.85)', fg: '#ffffff' });
     label.position.set(s.water.x, 2.2, s.water.z);
-    const bobber = new THREE.Group();
-    M.part(bobber, new THREE.SphereGeometry(0.18, 8, 6), 0xe63946, 0, 0, 0);
-    M.part(bobber, new THREE.SphereGeometry(0.12, 8, 6), 0xffffff, 0, 0.12, 0);
+    const isTrap = !!FISH[s.fish].trap;
+    const bobber = isTrap ? M.trap() : new THREE.Group();
+    if (!isTrap) {
+      M.part(bobber, new THREE.SphereGeometry(0.18, 8, 6), 0xe63946, 0, 0, 0);
+      M.part(bobber, new THREE.SphereGeometry(0.12, 8, 6), 0xffffff, 0, 0.12, 0);
+    }
     bobber.position.set(s.water.x, -0.4, s.water.z);
     bobber.visible = false;
     const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
@@ -209,7 +234,7 @@ export function createRenderer(g, scene, { popup }) {
     M.part(post, new THREE.CylinderGeometry(0.1, 0.1, 1.2, 6), 0x7a5634, 0, 0.6, 0);
     post.position.set(s.x + Math.sign(s.water.x - s.x || 1) * 1.5, 0, s.z + (s.water.z < s.z - 2 ? -1.5 : 0));
     scene.add(r, label, bobber, line, post);
-    spots[id] = { cfg: s, bobber, line, label };
+    spots[id] = { cfg: s, bobber, line, label, isTrap };
   }
 
   // Tables
@@ -293,6 +318,29 @@ export function createRenderer(g, scene, { popup }) {
     }
   }
 
+  // Clean plates stack up on a little rack beside the counter
+  const rackBase = { x: PLACES.counter.x + 3.4, z: PLACES.counter.z + 0.2 };
+  const rack = new THREE.Group();
+  M.part(rack, new THREE.BoxGeometry(1.0, 0.9, 1.0), 0x9c6b3f, 0, 0.45, 0);
+  rack.position.set(rackBase.x, 0, rackBase.z);
+  scene.add(rack);
+  const rackSlot = (i) => new THREE.Vector3(rackBase.x, 0.92 + Math.min(i, 19) * 0.07, rackBase.z);
+  const rackPlates = [];
+
+  // The fishing dock's trawler: sails in, waits while the crate is unloaded, sails back out
+  const trawler = new THREE.Group();
+  M.part(trawler, new THREE.BoxGeometry(5.5, 1.3, 2.4), 0x2a9d8f, 0, 0.15, 0);
+  M.part(trawler, new THREE.BoxGeometry(5.55, 0.3, 2.45), 0xf4f1ea, 0, -0.35, 0);
+  M.part(trawler, new THREE.BoxGeometry(1.6, 1.4, 1.6), 0xffffff, -1.4, 1.4, 0);
+  M.part(trawler, new THREE.BoxGeometry(1.8, 0.2, 1.8), 0xe63946, -1.4, 2.15, 0);
+  M.part(trawler, new THREE.CylinderGeometry(0.06, 0.06, 3.2, 5), 0xdddddd, 1.0, 2.0, 0);
+  const boom = M.part(trawler, new THREE.CylinderGeometry(0.05, 0.05, 2.6, 5), 0xdddddd, 1.9, 2.6, 0);
+  boom.rotation.z = Math.PI / 3;
+  for (const [x, z] of [[0.6, 0.5], [1.4, -0.5]]) M.part(trawler, new THREE.BoxGeometry(0.7, 0.6, 0.7), 0xc8955c, x, 1.1, z);
+  trawler.visible = false;
+  scene.add(trawler);
+  let trawlerX = DOCK.boat.x + 30;
+
   // Delivery boat
   const boat = new THREE.Group();
   M.part(boat, new THREE.BoxGeometry(5, 1.1, 2.4), 0xf4f1ea, 0, 0.1, 0);
@@ -344,8 +392,15 @@ export function createRenderer(g, scene, { popup }) {
   const SKINS = [0xf1c27d, 0xc68642, 0x8d5524, 0xffdbac];
   function custRig(c) {
     if (custRigs[c.id]) return custRigs[c.id];
-    const r = M.person({ shirt: SHIRTS[Math.floor(c.look * 7)], skin: SKINS[Math.floor(c.look * 37) % 4], pants: [0x3d405b, 0x6d597a, 0x355070][Math.floor(c.look * 13) % 3] });
-    const bubble = sprite([{ text: `${ITEMS[c.want].label} $${Math.round(ITEMS[c.want].price * g.mult)}`, size: 70 }], 2.9, { h: 150 });
+    const r = M.person({ shirt: c.vip ? 0xffd23f : SHIRTS[Math.floor(c.look * 7)], skin: SKINS[Math.floor(c.look * 37) % 4],
+      pants: c.vip ? 0x2b2d42 : [0x3d405b, 0x6d597a, 0x355070][Math.floor(c.look * 13) % 3] });
+    if (c.vip) {
+      const crown = M.part(r.group, new THREE.CylinderGeometry(0.22, 0.2, 0.18, 6, 1, true), M.mat(0xffc300, { side: THREE.DoubleSide }), 0, 2.1, 0);
+      crown.castShadow = false;
+    }
+    const price = Math.round(ITEMS[c.want].price * g.mult * (c.vip ? CASHIER.vipPay : 1));
+    const bubble = sprite([{ text: `${c.vip ? 'VIP · ' : ''}${ITEMS[c.want].label} $${price}`, size: 70 }], 2.9,
+      c.vip ? { h: 150, bg: 'rgba(255,214,64,0.97)', fg: '#5a3d00' } : { h: 150 });
     bubble.position.y = 2.75;
     r.group.add(bubble);
     r.group.position.set(c.x, 0, c.z);
@@ -366,8 +421,8 @@ export function createRenderer(g, scene, { popup }) {
     }
     if (kind === 'in' || kind === 'out') {
       const st = g.stations[ref];
-      const at = pileAt(STATIONS[ref], kind);
-      return new THREE.Vector3(at.x, pileY(kind === 'in' ? st.inQ : st.outQ, i, 1.12), at.z);
+      const list = kind === 'in' ? st.inQ : st.outQ;
+      return pilePos(pileAt(STATIONS[ref], kind), list, Math.min(i, MAX_SHOWN - 1));
     }
     if (kind === 'counter') return counterSlot(i).clone();
     if (kind === 'customer') {
@@ -376,6 +431,7 @@ export function createRenderer(g, scene, { popup }) {
     }
     if (kind === 'table') return new THREE.Vector3(TABLES[ref].x, 1.05, TABLES[ref].z);
     if (kind === 'bin') return new THREE.Vector3(PLACES.bin.x, 1.3, PLACES.bin.z);
+    if (kind === 'rack') return rackSlot(Math.max(0, g.plates - 1));
     if (kind === 'cash') return cashSlot(Math.max(0, cashBills.length - 1)).clone();
     if (kind === 'pad') { const p = pads[ref] || upPads[id.slice(4)]; return p ? p.grp.position.clone().setY(0.3) : new THREE.Vector3(); }
     return new THREE.Vector3();
@@ -444,7 +500,7 @@ export function createRenderer(g, scene, { popup }) {
       }
       case 'sale':
         sfx.sale();
-        popup(`+$${Math.round(e.amount)}`, new THREE.Vector3(PLACES.counter.x, 3, PLACES.counter.z), e.happy ? 'money' : 'money meh');
+        popup(`${e.vip ? 'VIP ' : ''}+$${Math.round(e.amount)}${e.plated ? ' plated' : ''}`, new THREE.Vector3(PLACES.counter.x, 3, PLACES.counter.z), e.vip ? 'money vip' : e.happy ? 'money' : 'money meh');
         break;
       case 'tip':
         popup(`tip +$${Math.round(e.amount)}`, new THREE.Vector3(TABLES[e.table].x, 3, TABLES[e.table].z), 'money');
@@ -469,7 +525,14 @@ export function createRenderer(g, scene, { popup }) {
         if (e.pad.kind === 'area') { addPier(e.pad.ref); if (e.pad.then) addSpot(e.pad.then); }
         break;
       }
-      case 'arrive': sfx.arrive(); break;
+      case 'arrive': if (e.vip) sfx.sale(); else sfx.arrive(); break;
+      case 'crate': {
+        const at = new THREE.Vector3(STATIONS.dock.out.x, 1.5, STATIONS.dock.out.z - 2.4);
+        popup(`+${e.n} fish`, at, 'money');
+        puff(at, 0xd6f3ff, 6, 0.35);
+        sfx.drop();
+        break;
+      }
       case 'boatArrive': setBoatLabel(e.offer); sfx.horn(); break;
       case 'boatReward': sfx.build(); puff(BOAT.pad, 0xffe7a3, 12, 0.5); break;
       case 'trash': popup('Tossed', new THREE.Vector3(PLACES.bin.x, 2.6, PLACES.bin.z), 'meh'); break;
@@ -525,6 +588,14 @@ export function createRenderer(g, scene, { popup }) {
       r.group.position.set(a.x, 0, a.z);
       turnToward(r, dx, dz, dt);
       animateWalk(r, moving, dt);
+      // Station chefs face their station and chop while it's cooking; the cashier faces the line
+      if (!moving && (a.kind === 'chef' || a.kind === 'cashier')) {
+        turnToward(r, 0, 1, dt);
+        if (a.kind === 'chef' && a.working) {
+          const c = Math.sin(time * 12);
+          r.arms[0].rotation.x = -1.2 + c * 0.5; r.arms[1].rotation.x = -1.2 - c * 0.5;
+        }
+      }
       // Stack sways opposite to motion, more at the top
       const v = moving ? Math.min(1, Math.hypot(dx, dz) / (dt * 7 + 1e-6)) : 0;
       r.lean += (v - r.lean) * (1 - Math.exp(-dt * 6));
@@ -541,24 +612,26 @@ export function createRenderer(g, scene, { popup }) {
     for (const [id, st] of Object.entries(g.stations)) {
       const s = stations[id];
       if (!s) continue;
-      const inAt = pileAt(s.cfg, 'in'), outAt = pileAt(s.cfg, 'out');
-      syncPile(s.inPile, st.inQ, (m, i) => m.position.set(inAt.x, pileY(st.inQ, i, 1.12), inAt.z), hide(`in:${id}`));
-      syncPile(s.outPile, st.outQ, (m, i) => m.position.set(outAt.x, pileY(st.outQ, i, 1.12), outAt.z), 0);
+      if (s.cfg.in) { const inAt = pileAt(s.cfg, 'in'); syncPile(s.inPile, st.inQ, (m, i) => m.position.copy(pilePos(inAt, st.inQ, i)), hide(`in:${id}`)); }
+      const outAt = pileAt(s.cfg, 'out');
+      syncPile(s.outPile, st.outQ, (m, i) => m.position.copy(pilePos(outAt, st.outQ, i)), 0);
+      if (s.cfg.type === 'bakery' || s.cfg.type === 'dock') s.busy.meshes.forEach((m) => { m.visible = false; });
       syncPile(s.busy, st.busy ? [st.busy] : [], (m) => m.position.set(s.cfg.x, 1.22, s.cfg.z), 0);
       if (s.anim.knife) {
         const chop = st.busy ? Math.abs(Math.sin(time * 14)) : 0;
         s.anim.knife.position.y = 1.35 + chop * 0.45;
         if (st.busy && chop < 0.15 && time - s.lastChop > 0.15) { s.lastChop = time; sfx.chop(); }
       }
-      if ((s.anim.smoke || s.anim.bubbles) && st.busy) {
+      if ((s.anim.smoke || s.anim.bubbles || s.anim.steam) && st.busy) {
         s.smokeT -= dt;
         if (s.smokeT <= 0) {
-          s.smokeT = s.anim.smoke ? 0.18 : 0.12;
-          const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s.anim.smoke ? 0.3 : 0.1, 0), new THREE.MeshLambertMaterial({
-            color: s.anim.smoke ? 0xdddddd : 0xfff1b0, transparent: true, opacity: 0.7, depthWrite: false }));
+          const big = s.anim.smoke || s.anim.steam;
+          s.smokeT = big ? 0.18 : 0.12;
+          const m = new THREE.Mesh(new THREE.DodecahedronGeometry(big ? 0.3 : 0.1, 0), new THREE.MeshLambertMaterial({
+            color: s.anim.steam ? 0xffffff : s.anim.smoke ? 0xdddddd : 0xfff1b0, transparent: true, opacity: 0.7, depthWrite: false }));
           m.position.set(s.cfg.x + (Math.random() - 0.5) * 2, 1.3, s.cfg.z + (Math.random() - 0.5) * 0.8);
           scene.add(m);
-          puffs.push({ m, t: 0, vy: s.anim.smoke ? 1.5 : 0.6 });
+          puffs.push({ m, t: 0, vy: big ? 1.5 : 0.6 });
           sfx.sizzle();
         }
       }
@@ -569,7 +642,7 @@ export function createRenderer(g, scene, { popup }) {
       const fisher = g.agents.find((a) => Math.hypot(a.x - s.cfg.x, a.z - s.cfg.z) < ZONE && (a.kind === 'player' || (a.kind === 'fisher' && a.spot === id)));
       s.bobber.visible = s.line.visible = !!fisher;
       if (!fisher) continue;
-      s.bobber.position.y = -0.4 + Math.sin(time * 5) * 0.08 - (fisher.catchT > 0.6 ? 0.15 : 0);
+      s.bobber.position.y = s.isTrap ? -0.75 + Math.abs(Math.sin(time * 3)) * 0.2 : -0.4 + Math.sin(time * 5) * 0.08 - (fisher.catchT > 0.6 ? 0.15 : 0);
       const r = rigs[fisher.id];
       const hand = r.group.localToWorld(new THREE.Vector3(0.45, 1.6, 0.4));
       const arr = s.line.geometry.attributes.position.array;
@@ -577,6 +650,21 @@ export function createRenderer(g, scene, { popup }) {
       arr[3] = s.bobber.position.x; arr[4] = s.bobber.position.y + 0.1; arr[5] = s.bobber.position.z;
       s.line.geometry.attributes.position.needsUpdate = true;
       r.arms[1].rotation.x = -1.3;
+    }
+
+    // Plate rack
+    const showPlates = Math.min(20, g.plates - hide('rack'));
+    while (rackPlates.length < showPlates) { const m = M.item('cleanPlate'); m.position.copy(rackSlot(rackPlates.length)); scene.add(m); rackPlates.push(m); }
+    while (rackPlates.length > Math.max(0, showPlates)) scene.remove(rackPlates.pop());
+    rack.visible = !!g.stations.sink || g.plates > 0;
+
+    // Trawler: arrives as the next crate gets close, unloads, then heads back out
+    if (g.stations.dock) {
+      trawler.visible = true;
+      const near = g.dockT > DOCK.every - 3 || g.dockT < 2;
+      trawlerX += ((near ? DOCK.boat.x : DOCK.boat.x + 30) - trawlerX) * (1 - Math.exp(-dt * 1.4));
+      trawler.position.set(trawlerX, -0.35 + Math.sin(time * 1.4) * 0.12, DOCK.boat.z);
+      trawler.rotation.z = Math.sin(time * 1.1) * 0.04;
     }
 
     // Tables

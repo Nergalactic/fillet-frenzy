@@ -63,6 +63,9 @@ export function person({ shirt = 0xffffff, pants = 0x3d405b, skin = 0xf1c27d, ha
 // ---------- items ----------
 // Height of each item when stacked
 export const ITEM_H = {
+  salmon: 0.34, crab: 0.32, lobster: 0.34, octopus: 0.5, salmonFillet: 0.17, tentacles: 0.2,
+  grilledSalmon: 0.26, smokedSalmon: 0.24, steamedCrab: 0.36, steamedLobster: 0.36, crabRoll: 0.3,
+  lobsterRoll: 0.32, takoyaki: 0.3, bread: 0.3, cleanPlate: 0.08,
   sardine: 0.3, tuna: 0.42, squid: 0.75, sardineFillet: 0.17, tunaSteak: 0.22, calamari: 0.2,
   grilledSardine: 0.26, fishAndChips: 0.4, grilledTuna: 0.28, sushi: 0.3, friedCalamari: 0.3, plate: 0.1, cash: 0.06,
 };
@@ -76,6 +79,40 @@ function fish(g, len, body, belly, fin) {
   t.rotation.x = -Math.PI / 2; t.scale.z = 0.3;
   part(g, sph(0.04 * len + 0.02, 6, 4), 0x111111, len * 0.12, len * 0.27, len * 0.33);
   part(g, sph(0.04 * len + 0.02, 6, 4), 0x111111, -len * 0.12, len * 0.27, len * 0.33);
+}
+
+function crab(g, color) {
+  const b = part(g, sph(0.3, 10, 6), color, 0, 0.18, 0);
+  b.scale.set(1.2, 0.5, 0.9);
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      const l = part(g, box(0.04, 0.04, 0.3), color, s * 0.33, 0.08, -0.12 + i * 0.12);
+      l.rotation.y = s * (Math.PI / 2 - 0.3); l.rotation.z = s * 0.4;
+    }
+    part(g, sph(0.1, 6, 4), color, s * 0.28, 0.2, 0.32).scale.set(1, 0.7, 1.3);
+    part(g, sph(0.04, 6, 4), 0x111111, s * 0.08, 0.3, 0.22);
+  }
+}
+function lobster(g, color) {
+  const b = part(g, sph(0.2, 10, 6), color, 0, 0.16, 0);
+  b.scale.set(0.8, 0.7, 2.2);
+  const t = part(g, geo('ltail', () => new THREE.ConeGeometry(0.16, 0.3, 5)), color, 0, 0.12, -0.5);
+  t.rotation.x = -Math.PI / 2; t.scale.z = 0.4;
+  for (const s of [-1, 1]) {
+    const arm = part(g, box(0.05, 0.05, 0.3), color, s * 0.15, 0.16, 0.48);
+    arm.rotation.y = s * 0.4;
+    part(g, sph(0.11, 6, 4), color, s * 0.24, 0.17, 0.66).scale.set(0.8, 0.6, 1.4);
+    part(g, cyl(0.01, 0.01, 0.5, 3), 0x7a2a1a, s * 0.06, 0.25, 0.55).rotation.x = Math.PI / 2 - 0.3;
+  }
+}
+function octopus(g, color) {
+  part(g, sph(0.28, 10, 8), color, 0, 0.32, -0.05).scale.set(1, 1.1, 1.2);
+  part(g, sph(0.05, 6, 4), 0xffffff, 0.12, 0.35, 0.22); part(g, sph(0.05, 6, 4), 0xffffff, -0.12, 0.35, 0.22);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const t = part(g, cyl(0.06, 0.03, 0.55, 5), color, Math.cos(a) * 0.25, 0.08, Math.sin(a) * 0.25 + 0.05);
+    t.rotation.z = Math.cos(a) * 1.2; t.rotation.x = -Math.sin(a) * 1.2;
+  }
 }
 
 function plateUnder(g) { part(g, cyl(0.42, 0.36, 0.06, 14), 0xf8f8f4, 0, 0.03, 0); }
@@ -147,6 +184,57 @@ export function item(type) {
       }
       part(g, sph(0.07, 6, 4), 0xf7e05a, 0.28, 0.1, 0.18);
       break;
+    case 'salmon': fish(g, 1.0, 0x8a9aa8, 0xf2b8a0, 0x6f7f8c); break;
+    case 'crab': crab(g, 0xd9482b); break;
+    case 'lobster': lobster(g, 0x2e4a7d); break;
+    case 'octopus': octopus(g, 0xb04a8f); break;
+    case 'salmonFillet':
+      part(g, box(0.8, 0.12, 0.38), 0xff8a5b, 0, 0.06, 0);
+      for (const x of [-0.2, 0, 0.2]) part(g, box(0.03, 0.01, 0.36), 0xffd2bd, x, 0.125, 0, false);
+      break;
+    case 'tentacles':
+      for (let i = 0; i < 4; i++) {
+        const t = part(g, cyl(0.06, 0.03, 0.7, 5), 0xc65fa0, -0.2 + i * 0.13, 0.08, 0);
+        t.rotation.x = Math.PI / 2; t.rotation.z = (i - 1.5) * 0.15;
+      }
+      break;
+    case 'grilledSalmon':
+      plateUnder(g);
+      part(g, box(0.5, 0.12, 0.3), 0xe0703e, 0, 0.12, 0);
+      grillMarks(g, 0.185, 0.3);
+      part(g, sph(0.07, 6, 4), 0xf7e05a, 0.28, 0.1, 0.15);
+      break;
+    case 'smokedSalmon':
+      part(g, box(0.75, 0.06, 0.45), 0x8a5a33, 0, 0.03, 0);
+      for (let i = 0; i < 4; i++) part(g, box(0.16, 0.05, 0.36), 0xf26b3a, -0.25 + i * 0.17, 0.09, 0).rotation.z = 0.25;
+      part(g, box(0.1, 0.04, 0.1), 0x6bbf59, 0.3, 0.12, 0.12);
+      break;
+    case 'steamedCrab': plateUnder(g); { const c = new THREE.Group(); crab(c, 0xf05a3a); c.scale.setScalar(0.8); c.position.y = 0.04; g.add(c); } break;
+    case 'steamedLobster': plateUnder(g); { const c = new THREE.Group(); lobster(c, 0xe8452c); c.scale.setScalar(0.75); c.position.y = 0.04; g.add(c); } break;
+    case 'bread':
+      part(g, box(0.62, 0.24, 0.34), 0xd99a4e, 0, 0.12, 0);
+      part(g, cyl(0.17, 0.17, 0.62, 10), 0xe4ac60, 0, 0.24, 0).rotation.z = Math.PI / 2;
+      break;
+    case 'crabRoll':
+    case 'lobsterRoll': {
+      part(g, box(0.7, 0.14, 0.32), 0xe4ac60, 0, 0.07, 0);
+      const fill = type === 'lobsterRoll' ? 0xf06a4a : 0xf3a07a;
+      for (let i = 0; i < 4; i++) part(g, sph(0.09, 6, 4), fill, -0.24 + i * 0.16, 0.18, 0);
+      part(g, box(0.62, 0.04, 0.1), 0x6bbf59, 0, 0.15, 0.12);
+      if (type === 'lobsterRoll') part(g, box(0.72, 0.03, 0.34), 0xffd23f, 0, 0.01, 0, false);
+      break;
+    }
+    case 'takoyaki':
+      part(g, box(0.62, 0.06, 0.4), 0xc8955c, 0, 0.03, 0);
+      for (let i = 0; i < 6; i++) {
+        part(g, sph(0.1, 8, 6), 0xd38a3a, -0.18 + (i % 3) * 0.18, 0.13, i < 3 ? -0.09 : 0.09);
+        part(g, box(0.12, 0.01, 0.03), 0x3b2414, -0.18 + (i % 3) * 0.18, 0.235, i < 3 ? -0.09 : 0.09, false);
+      }
+      break;
+    case 'cleanPlate':
+      part(g, cyl(0.42, 0.36, 0.06, 14), 0xffffff, 0, 0.03, 0);
+      part(g, cyl(0.3, 0.3, 0.01, 14), 0xe8f4ff, 0, 0.065, 0, false);
+      break;
     case 'plate':
       plateUnder(g);
       part(g, box(0.18, 0.01, 0.12), 0x8a6a3a, 0.08, 0.065, -0.05, false);
@@ -197,8 +285,56 @@ export function station(type) {
     part(g, box(1.6, 0.04, 1.0), 0x7fa650, 0, 1.1, 0);
     for (let i = 0; i < 8; i++) part(g, box(1.6, 0.045, 0.03), 0x5e7f38, 0, 1.11, -0.45 + i * 0.13, false);
     part(g, box(0.6, 0.4, 0.4), 0x2b2b2b, -1.1, 1.3, -0.5);
+  } else if (type === 'smoker') {
+    part(g, box(2.6, 1.8, 1.6), 0x5b4a3f, 0, 0.9, 0);
+    part(g, box(2.7, 0.15, 1.7), 0x3b2f28, 0, 1.85, 0);
+    part(g, box(1.2, 0.9, 0.05), 0x2b2b2b, 0, 1.0, 0.82);
+    part(g, cyl(0.15, 0.15, 1.2, 8), 0x55595f, 0.9, 2.4, -0.4);
+    anim.smoke = true;
+  } else if (type === 'steam') {
+    part(g, box(3.0, 0.8, 1.6), 0x8d969c, 0, 0.4, 0);
+    part(g, cyl(0.75, 0.65, 0.9, 14), 0xb8c0c6, 0, 1.25, 0);
+    part(g, cyl(0.78, 0.78, 0.08, 14), 0x8d969c, 0, 1.72, 0);
+    part(g, sph(0.12, 6, 4), 0x2b2b2b, 0, 1.82, 0);
+    anim.steam = true;
+  } else if (type === 'bakery') {
+    part(g, box(2.8, 1.8, 1.8), 0xc9733e, 0, 0.9, 0);
+    const dome = part(g, sph(1.2, 12, 8, ), 0xb5612f, 0, 1.8, 0);
+    dome.scale.set(1.1, 0.6, 0.75);
+    part(g, box(0.9, 0.6, 0.05), mat(0xff9a3c, { emissive: 0xc2410c }), 0, 1.0, 0.92, false);
+    part(g, cyl(0.2, 0.2, 1.0, 8), 0x8a4a28, 0.8, 2.5, -0.3);
+    anim.smoke = true;
+  } else if (type === 'roll') {
+    table(g, 3.2, 1.6, 0xf4e3c3, 0x8d5f35);
+    for (let i = 0; i < 3; i++) part(g, box(0.5, 0.2, 0.3), 0xe4ac60, -0.9 + i * 0.6, 1.2, -0.45);
+    part(g, box(0.9, 0.06, 0.6), 0xffffff, 0.6, 1.11, 0.2);
+  } else if (type === 'griddle') {
+    part(g, box(3.0, 1.0, 1.6), 0x2b2d42, 0, 0.5, 0);
+    part(g, box(2.6, 0.12, 1.3), 0x1c1c1c, 0, 1.06, 0);
+    for (let i = 0; i < 12; i++) part(g, cyl(0.16, 0.16, 0.02, 10), mat(0x6b3a1a, { emissive: 0x3a1a05 }), -1.0 + (i % 6) * 0.4, 1.13, i < 6 ? -0.3 : 0.3, false);
+    anim.smoke = true;
+  } else if (type === 'sink') {
+    part(g, box(3.0, 1.0, 1.6), 0xd9dee2, 0, 0.5, 0);
+    part(g, box(2.2, 0.1, 1.1), mat(0x7fc8f0, { emissive: 0x1d5a7a }), 0, 1.02, 0, false);
+    part(g, cyl(0.05, 0.05, 0.8, 6), 0x9aa3ab, 0, 1.4, -0.6);
+    part(g, box(0.05, 0.05, 0.4), 0x9aa3ab, 0, 1.8, -0.42);
+    anim.bubbles = true;
+  } else if (type === 'dock') {
+    for (let i = 0; i < 6; i++) part(g, box(4.2, 0.18, 0.9), i % 2 ? 0xa77a4b : 0xb98a5a, 0, -0.02, 2.6 - i * 1.0);
+    for (const [x, z] of [[-1.9, -2.6], [1.9, -2.6], [-1.9, 0.2], [1.9, 0.2]]) part(g, cyl(0.2, 0.2, 2.4, 8), 0x7a5634, x, -1.0, z);
+    for (const [x, z] of [[-1.2, 2.4], [-0.4, 2.6]]) part(g, box(0.7, 0.6, 0.7), 0xc8955c, x, 0.3, z);
   }
   return { group: g, anim };
+}
+
+// A crab/lobster trap: a cage that sits in the water and bobs up when something's caught
+export function trap() {
+  const g = new THREE.Group();
+  const wire = mat(0x6c757d, { wireframe: true });
+  part(g, box(0.9, 0.6, 0.9), wire, 0, 0.3, 0, false);
+  part(g, box(0.95, 0.06, 0.95), 0x5b4a3f, 0, 0.0, 0);
+  part(g, sph(0.15, 8, 6), 0xff9f1c, 0, 1.0, 0);
+  return g;
 }
 
 export function counterModel() {

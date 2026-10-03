@@ -1,7 +1,7 @@
 // Fillet Frenzy rules with no rendering. The browser game and the balance bot both run this.
 // Rendering reads the state and the `events` list each frame.
 import {
-  ITEMS, RECIPES, FISH, PLAYER, HELPER, CUSTOMERS, STARS, AREAS, PLACES,
+  ITEMS, RECIPES, FISH, PLAYER, HELPER, CUSTOMERS, STARS, AREAS, PLACES, CASHIER, PLATES, DOCK,
   STATIONS, SPOTS, TABLES, PADS, PADS_SHOWN, SELL_PAD, LEVELS, NAMES, BOAT,
 } from './config.js';
 
@@ -14,6 +14,7 @@ export const PAD_HOLD = 0.35;
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 export const sellable = (item) => ITEMS[item]?.price !== undefined;
+const MOBILE = ['fisher', 'runner', 'server', 'busser', 'washer'];
 
 export function mulberry32(seed) {
   return function () {
@@ -31,7 +32,7 @@ function makeAgent(id, kind, x, z, extra = {}) {
 }
 
 function makeStation(id) {
-  return { id, ...STATIONS[id], inQ: [], outQ: [], busy: null, timer: 0 };
+  return { id, ...STATIONS[id], inQ: [], outQ: [], busy: null, timer: 0, prodT: 0 };
 }
 
 export function createGame(stars = 0, seed = 7) {
@@ -42,10 +43,11 @@ export function createGame(stars = 0, seed = 7) {
     stations: { cut1: makeStation('cut1') },
     spots: { s1: { id: 's1', ...SPOTS.s1 } },
     tables: {},
-    counter: [],
+    counter: [], plates: 0,
     agents: [],
     customers: [], custT: 1.5, custSeq: 0,
     built: new Set(), padPaid: {}, levels: {},
+    chefs: new Set(), cashier: false, dockT: 0,
     squidCaught: false, sellT: 0,
     boat: { state: 'away', t: BOAT.first, offer: null, hold: 0 }, boosts: { cash: 0, rush: 0 },
     events: [],
@@ -87,6 +89,7 @@ export function visiblePads(g) {
   const out = [];
   for (const p of PADS) {
     if (g.built.has(p.id)) continue;
+    if (p.kind === 'helper' && p.ref === 'chef' && !g.stations[p.station]) continue;
     const pos = padPos(p);
     if (!walkable(g, pos.x, pos.z)) continue;
     out.push(p);
@@ -104,7 +107,10 @@ function build(g, p) {
     g.areas.add(p.ref);
     if (p.then) g.spots[p.then] = { id: p.then, ...SPOTS[p.then] };
   } else if (p.kind === 'helper') {
-    const h = makeAgent(`${p.ref}${g.agents.length}`, p.ref, PLACES.helperHome.x, PLACES.helperHome.z, { spot: p.spot });
+    let x = PLACES.helperHome.x, z = PLACES.helperHome.z;
+    if (p.ref === 'chef') { const c = STATIONS[p.station].chef; x = c.x; z = c.z; g.chefs.add(p.station); }
+    if (p.ref === 'cashier') { const c = cashierPost(); x = c.x; z = c.z; g.cashier = true; }
+    const h = makeAgent(`${p.ref}${g.agents.length}`, p.ref, x, z, { spot: p.spot, station: p.station });
     applyStaff(g, h);
     g.agents.push(h);
   } else if (p.kind === 'upgrade') {
@@ -113,24 +119,26 @@ function build(g, p) {
   }
   g.events.push({ type: 'built', pad: p });
 }
+const cashierPost = () => ({ x: PLACES.counter.x + 1.6, z: PLACES.counter.z - 1.6 });
 
-// ---------- upgrades ----------
+// ---------- upgrades (no level cap) ----------
 export const level = (g, id) => g.levels[id] || 1;
 export const bufMax = (g, st) => BUFFER_MAX + LEVELS.station.buffer * (level(g, `st:${st.id}`) - 1);
 export const counterMax = (g) => COUNTER_MAX + LEVELS.counter.stock * (level(g, 'counter') - 1);
 const cost = (base, lv) => Math.round(base * Math.pow(LEVELS.growth, lv - 1));
+export const stationSpeed = (g, st) => (1 + LEVELS.station.speed * (level(g, `st:${st.id}`) - 1)) * (g.chefs.has(st.id) ? 2 : 1);
 
 // Every upgrade pad that's on the map right now
 export function upgradePads(g) {
   const out = [];
   const add = (id, name, base, pos) => {
     const lv = level(g, id);
-    if (lv < LEVELS.max) out.push({ id, name, level: lv, price: cost(base, lv), x: pos.x, z: pos.z, key: `${id}#${lv}` });
+    out.push({ id, name, level: lv, price: cost(base, lv), x: pos.x, z: pos.z, key: `${id}#${lv}` });
   };
-  for (const st of Object.values(g.stations)) add(`st:${st.id}`, NAMES[st.type], LEVELS.station.base[st.type], { x: st.x, z: st.z + 2.7 });
+  for (const st of Object.values(g.stations)) add(`st:${st.id}`, NAMES[st.type], LEVELS.station.base[st.type], st.up || { x: st.x, z: st.z + 2.7 });
   add('counter', 'Counter', LEVELS.counter.base, LEVELS.counter);
-  for (const s of Object.values(g.spots)) if (s.up) add(`spot:${s.id}`, 'Fishing spot', LEVELS.spot.base[s.fish], s.up);
-  if (g.agents.length > 1) add('staff', 'Staff training', LEVELS.staff.base, LEVELS.staff);
+  for (const s of Object.values(g.spots)) if (s.up) add(`spot:${s.id}`, `${ITEMS[s.fish].label} spot`, LEVELS.spot.base[s.fish], s.up);
+  if (g.agents.some((a) => MOBILE.includes(a.kind))) add('staff', 'Staff training', LEVELS.staff.base, LEVELS.staff);
   return out;
 }
 
@@ -156,20 +164,39 @@ function payInto(g, a, key, price, dt) {
   return g.padPaid[key] >= price - 1e-6;
 }
 
-// ---------- what each kind of worker is allowed to do ----------
-const cookers = ['grill', 'fryer', 'sushi'];
-function accepts(st, item) { return !!RECIPES[st.type].makes[item]; }
-function cookable(g, item) {
-  return Object.values(g.stations).some((s) => cookers.includes(s.type) && accepts(s, item));
+// ---------- what goes where ----------
+export function accepts(st, item) {
+  const r = RECIPES[st.type];
+  if (!st.in) return false;
+  if (r.makes) return !!r.makes[item];
+  if (r.combo) return item === r.combo.with || !!r.combo.makes[item];
+  return false;
 }
+// Room for this item right now. Combo stations keep half their space for each ingredient.
+export function canTake(g, st, item) {
+  if (!accepts(st, item)) return false;
+  const r = RECIPES[st.type];
+  if (r.combo) {
+    const isWith = item === r.combo.with;
+    const n = st.inQ.filter((it) => (it === r.combo.with) === isWith).length;
+    return n < Math.ceil(bufMax(g, st) / 2);
+  }
+  return st.inQ.length < bufMax(g, st);
+}
+// Stations (other than `except`) that use this item as an ingredient
+const wantedBy = (g, item, except) => Object.values(g.stations).filter((s) => s !== except && s.type !== 'sink' && accepts(s, item));
 
 const can = {
   fish: (a, spot) => a.kind === 'player' || (a.kind === 'fisher' && a.spot === spot.id),
-  dropAt: (a, st) => a.kind === 'player' || (a.kind === 'fisher' && st.type === 'cut') || (a.kind === 'runner' && cookers.includes(st.type)),
+  dropAt: (a, st) => a.kind === 'player'
+    || (a.kind === 'fisher' && (st.type === 'cut' || st.type === 'steam'))
+    || (a.kind === 'runner' && st.type !== 'sink')
+    || (a.kind === 'busser' && st.type === 'sink'),
   pickFrom: (g, a, st, item) => a.kind === 'player'
-    || (a.kind === 'runner' && st.type === 'cut' && cookable(g, item))
-    || (a.kind === 'server' && (cookers.includes(st.type) || !cookable(g, item))),
-  counter: (a) => a.kind === 'player' || a.kind === 'server',
+    || (a.kind === 'runner' && st.type !== 'sink' && wantedBy(g, item, st).length > 0)
+    || (a.kind === 'server' && sellable(item) && wantedBy(g, item, st).length === 0)
+    || (a.kind === 'washer' && item === 'cleanPlate'),
+  counter: (a) => a.kind === 'player' || a.kind === 'server' || a.kind === 'washer',
   plates: (a) => a.kind === 'player' || a.kind === 'busser',
 };
 
@@ -177,13 +204,17 @@ const can = {
 export function menu(g) {
   const have = new Set();
   for (const s of Object.values(g.spots)) have.add(s.fish);
+  const types = new Set(Object.values(g.stations).map((s) => s.type));
+  if (types.has('dock')) for (const s of Object.values(g.spots)) have.add(s.fish);
   let grew = true;
   while (grew) {
     grew = false;
-    for (const st of Object.values(g.stations)) {
-      for (const [from, to] of Object.entries(RECIPES[st.type].makes)) {
-        if (have.has(from) && !have.has(to)) { have.add(to); grew = true; }
-      }
+    const add = (it) => { if (!have.has(it)) { have.add(it); grew = true; } };
+    for (const t of types) {
+      const r = RECIPES[t];
+      if (r.makes) for (const [from, to] of Object.entries(r.makes)) if (have.has(from)) add(to);
+      if (r.produce) add(r.produce);
+      if (r.combo && have.has(r.combo.with)) for (const [from, to] of Object.entries(r.combo.makes)) if (have.has(from)) add(to);
     }
   }
   return [...have].filter(sellable);
@@ -191,6 +222,7 @@ export function menu(g) {
 
 // ---------- per-agent interactions ----------
 function interact(g, a, dt) {
+  if (a.kind === 'chef' || a.kind === 'cashier') return;
   a.opT += dt;
   const ready = () => { if (a.opT >= PLAYER.transfer) { a.opT = 0; return true; } return false; };
   const room = () => a.stack.length < a.cap;
@@ -213,16 +245,16 @@ function interact(g, a, dt) {
   if (!fishing) a.catchT = 0;
 
   for (const st of Object.values(g.stations)) {
-    // Drop raw/prepped items into a station
-    if (dist(a, st.in) < ZONE && can.dropAt(a, st) && st.inQ.length < bufMax(g, st)) {
-      const i = a.stack.findLastIndex((it) => accepts(st, it));
+    // Drop ingredients into a station
+    if (st.in && dist(a, st.in) < ZONE && can.dropAt(a, st)) {
+      const i = a.stack.findLastIndex((it) => canTake(g, st, it));
       if (i >= 0 && ready()) {
         const [it] = a.stack.splice(i, 1);
         st.inQ.push(it);
         g.events.push({ type: 'move', item: it, from: `agent:${a.id}`, fromIndex: i, to: `in:${st.id}` });
       }
     }
-    // Pick finished items up
+    // Pick finished things up
     if (dist(a, st.out) < ZONE && st.outQ.length && room()) {
       const it = st.outQ[st.outQ.length - 1];
       if (can.pickFrom(g, a, st, it) && ready()) {
@@ -233,13 +265,14 @@ function interact(g, a, dt) {
     }
   }
 
-  // Counter: drop anything sellable
-  if (can.counter(a) && dist(a, PLACES.counter.drop) < ZONE && g.counter.length < counterMax(g)) {
-    const i = a.stack.findLastIndex(sellable);
+  // Counter: food onto the counter, clean plates onto the rack
+  if (can.counter(a) && dist(a, PLACES.counter.drop) < ZONE) {
+    const i = a.stack.findLastIndex((it) => (sellable(it) && a.kind !== 'washer' && g.counter.length < counterMax(g))
+      || (it === 'cleanPlate' && g.plates < PLATES.rackMax));
     if (i >= 0 && ready()) {
       const [it] = a.stack.splice(i, 1);
-      g.counter.push(it);
-      g.events.push({ type: 'move', item: it, from: `agent:${a.id}`, fromIndex: i, to: 'counter' });
+      if (it === 'cleanPlate') { g.plates++; g.events.push({ type: 'move', item: it, from: `agent:${a.id}`, fromIndex: i, to: 'rack' }); }
+      else { g.counter.push(it); g.events.push({ type: 'move', item: it, from: `agent:${a.id}`, fromIndex: i, to: 'counter' }); }
     }
   }
 
@@ -301,30 +334,55 @@ export function playerStuck(g) {
   if (a.stack.length < a.cap) return false;
   for (const it of a.stack) {
     if (it === 'plate') return false;
+    if (it === 'cleanPlate' && g.plates < PLATES.rackMax) return false;
     if (sellable(it) && g.counter.length < counterMax(g)) return false;
-    if (Object.values(g.stations).some((s) => accepts(s, it) && s.inQ.length < bufMax(g, s))) return false;
+    if (Object.values(g.stations).some((s) => canTake(g, s, it))) return false;
   }
   return true;
 }
 
 export function starsFor(g) {
-  return 1 + Math.floor(g.earned / STARS.perEarned);
+  return 1 + Math.floor(Math.sqrt(g.earned / g.mult / STARS.scale));
 }
 
 // ---------- stations ----------
 function stepStations(g, dt) {
   for (const st of Object.values(g.stations)) {
     const r = RECIPES[st.type];
-    if (!st.busy && st.inQ.length && st.outQ.length < bufMax(g, st)) {
-      st.busy = st.inQ.shift();
-      st.timer = r.time * (r.slow?.[st.busy] || 1) / (1 + LEVELS.station.speed * (level(g, `st:${st.id}`) - 1));
-      st.total = st.timer;
-      g.events.push({ type: 'start', station: st.id, item: st.busy });
+    const full = st.outQ.length >= bufMax(g, st);
+    if (st.type === 'dock') continue;
+    if (r.produce) {
+      if (full) continue;
+      st.prodT += dt * stationSpeed(g, st);
+      st.busy = r.produce;
+      if (st.prodT >= r.time) {
+        st.prodT = 0;
+        st.outQ.push(r.produce);
+        g.events.push({ type: 'made', station: st.id, item: r.produce });
+      }
+      continue;
+    }
+    if (!st.busy && !full && st.inQ.length) {
+      if (r.combo) {
+        const w = st.inQ.indexOf(r.combo.with);
+        const m = st.inQ.findIndex((it) => r.combo.makes[it]);
+        if (w >= 0 && m >= 0) {
+          st.busy = st.inQ[m];
+          st.inQ = st.inQ.filter((_, k) => k !== w && k !== m);
+        }
+      } else {
+        st.busy = st.inQ.shift();
+      }
+      if (st.busy) {
+        st.timer = r.time * (r.slow?.[st.busy] || 1) / stationSpeed(g, st);
+        st.total = st.timer;
+        g.events.push({ type: 'start', station: st.id, item: st.busy });
+      }
     }
     if (st.busy) {
       st.timer -= dt;
       if (st.timer <= 0) {
-        const made = r.makes[st.busy];
+        const made = r.combo ? r.combo.makes[st.busy] : r.makes[st.busy];
         st.outQ.push(made);
         g.events.push({ type: 'made', station: st.id, item: made });
         st.busy = null;
@@ -333,64 +391,87 @@ function stepStations(g, dt) {
   }
 }
 
+// The fishing dock: a trawler drops a crate of mixed fish (whatever you've unlocked, no squid)
+function stepDock(g, dt) {
+  const st = g.stations.dock;
+  if (!st) return;
+  g.dockT += dt;
+  if (g.dockT < DOCK.every) return;
+  g.dockT = 0;
+  const kinds = [...new Set(Object.values(g.spots).map((s) => s.fish))].filter((f) => f !== 'squid');
+  const n = DOCK.crate + DOCK.perLevel * (level(g, 'st:dock') - 1);
+  let added = 0;
+  for (let i = 0; i < n && st.outQ.length < bufMax(g, st); i++) {
+    st.outQ.push(kinds[Math.floor(g.rng() * kinds.length)]);
+    added++;
+  }
+  if (added) g.events.push({ type: 'crate', n: added });
+}
+
 // ---------- customers ----------
 // Registers sit side by side along the counter; everyone else lines up behind the middle one.
-export const registers = (g) => Math.min(3, level(g, 'counter'));
-function registerSlot(i, r) { const f = PLACES.counter.front; return { x: f.x + (i - (r - 1) / 2) * 1.8, z: f.z }; }
+export const registers = (g) => Math.min(3, level(g, 'counter')) + (g.cashier ? 1 : 0);
+function registerSlot(i, r) { const f = PLACES.counter.front; return { x: f.x + (i - (r - 1) / 2) * 1.7, z: f.z }; }
 function lineSlot(j) { const f = PLACES.counter.front; return { x: f.x + Math.floor(j / 6) * 1.6, z: f.z + 2.3 + (j % 6) * 2.3 }; }
 
 function stepCustomers(g, dt) {
   const tables = Object.values(g.tables);
   const queued = g.customers.filter((c) => c.state === 'queue');
   const cl = level(g, 'counter') - 1;
-  const every = Math.max(CUSTOMERS.minEvery / (1 + LEVELS.counter.customers * cl),
-    CUSTOMERS.baseEvery / (1 + CUSTOMERS.perTable * tables.length) / (1 + LEVELS.counter.customers * cl));
+  const boost = 1 + LEVELS.counter.customers * cl;
+  const every = Math.max(CUSTOMERS.minEvery / boost, CUSTOMERS.baseEvery / (1 + CUSTOMERS.perTable * tables.length) / boost);
   g.custT -= dt;
   if (g.custT <= 0) {
     g.custT = every;
     const m = menu(g);
     // Only people who've reached the line count toward it, so walkers on their way don't block new arrivals
     const waiting = queued.filter((c) => c.arrived).length;
-    if (waiting < CUSTOMERS.queueMax + LEVELS.counter.queue * cl && queued.length < 30 && m.length) {
+    if (waiting < CUSTOMERS.queueMax + LEVELS.counter.queue * Math.min(cl, 6) && queued.length < 30 && m.length) {
       // Favourite dish, weighted toward pricier things on the menu
       const w = m.map((it) => Math.sqrt(ITEMS[it].price));
       let r = g.rng() * w.reduce((a, b) => a + b, 0), want = m[0];
       for (let i = 0; i < m.length; i++) { r -= w[i]; if (r <= 0) { want = m[i]; break; } }
-      const c = { id: g.custSeq++, x: PLACES.enter.x, z: PLACES.enter.z, state: 'queue', want, waitT: 0, look: g.rng() };
+      const vip = g.cashier && g.rng() < CASHIER.vipChance;
+      const c = { id: g.custSeq++, x: PLACES.enter.x, z: PLACES.enter.z, state: 'queue', want, waitT: 0, look: g.rng(), vip };
       g.customers.push(c);
       queued.push(c);
-      g.events.push({ type: 'arrive', customer: c.id });
+      g.events.push({ type: 'arrive', customer: c.id, vip });
     }
   }
 
-  // Each customer keeps the register they're sent to until they've bought something
+  // Each customer keeps the register they're sent to until they've bought something. VIPs go first.
   const regs = registers(g);
   g.regs = g.regs || [];
   for (let i = 0; i < regs; i++) {
     if (g.regs[i] !== undefined && queued.some((c) => c.id === g.regs[i])) continue;
-    const next = queued.find((c) => c.reg === undefined);
+    const next = queued.find((c) => c.reg === undefined && c.vip && c.arrived) || queued.find((c) => c.reg === undefined);
     if (next) { next.reg = i; g.regs[i] = next.id; } else g.regs[i] = undefined;
   }
+  g.regs.length = regs;
   let j = 0;
+  const picky = CUSTOMERS.pickyFor / (1 + cl) / (g.cashier ? 2 : 1);
   queued.forEach((c) => {
+    if (c.reg !== undefined && c.reg >= regs) c.reg = undefined;
     const slot = c.reg === undefined ? lineSlot(j++) : registerSlot(c.reg, regs);
     if (walk(c, slot, CUSTOMERS.speed, dt)) c.arrived = true;
     if (c.reg === undefined || dist(c, slot) > 0.4) return;
     c.waitT += dt;
     let i = g.counter.lastIndexOf(c.want);
-    if (i < 0 && c.waitT > CUSTOMERS.pickyFor / (1 + cl) && g.counter.length) {
+    if (i < 0 && c.waitT > picky && g.counter.length) {
       i = 0;
-      g.counter.forEach((it, j) => { if (ITEMS[it].price > ITEMS[g.counter[i]].price) i = j; });
+      g.counter.forEach((it, k) => { if (ITEMS[it].price > ITEMS[g.counter[i]].price) i = k; });
     }
     if (i < 0) return;
     const [it] = g.counter.splice(i, 1);
     g.regs[c.reg] = undefined;
     c.food = it;
-    const pay = ITEMS[it].price * g.mult * (g.boosts.cash > 0 ? 2 : 1);
+    let pay = ITEMS[it].price * g.mult * (g.boosts.cash > 0 ? 2 : 1) * (c.vip ? CASHIER.vipPay : 1);
+    const plated = g.plates > 0;
+    if (plated) { g.plates--; pay *= 1 + PLATES.bonus; }
     g.cashPile += pay;
     g.earned += pay;
     g.events.push({ type: 'move', item: it, from: 'counter', fromIndex: i, to: `customer:${c.id}` });
-    g.events.push({ type: 'sale', amount: pay, customer: c.id, happy: it === c.want });
+    g.events.push({ type: 'sale', amount: pay, customer: c.id, happy: it === c.want, vip: c.vip, plated });
     const free = tables.find((t) => t.state === 'free');
     if (free) { free.state = 'taken'; c.table = free.id; c.state = 'toTable'; }
     else c.state = 'leaving';
@@ -405,7 +486,7 @@ function stepCustomers(g, dt) {
       if (c.eatT <= 0) {
         const tb = g.tables[c.table];
         tb.state = 'dirty'; tb.plates = 1;
-        const tip = ITEMS[c.food].price * CUSTOMERS.tip * g.mult * (g.boosts.cash > 0 ? 2 : 1);
+        const tip = ITEMS[c.food].price * CUSTOMERS.tip * g.mult * (g.boosts.cash > 0 ? 2 : 1) * (c.vip ? CASHIER.vipPay : 1);
         g.cashPile += tip;
         g.earned += tip;
         g.events.push({ type: 'tip', amount: tip, table: tb.id });
@@ -432,14 +513,12 @@ function walk(o, to, speed, dt) {
 }
 
 // ---------- helper brains ----------
-function stationsOf(g, types) { return Object.values(g.stations).filter((s) => types.includes(s.type)); }
 function nearest(a, list, pos = (x) => x) {
   let best = null, bd = Infinity;
   for (const it of list) { const d = dist(a, pos(it)); if (d < bd) { bd = d; best = it; } }
   return best;
 }
 
-// Where a worker should go next: { x, z } or null to head home.
 // Staff choose stations by priority, then distance:
 //   dropping off  -> highest-level station with room (if all are full, wait at the best one)
 //   picking up    -> the station with the most finished food waiting, so piles never back up
@@ -452,35 +531,41 @@ function best(a, list, ...keys) {
   }
   return pick;
 }
-function dropOff(g, a, stations, wants) {
-  const open = stations.filter((s) => wants(s) && s.inQ.length < bufMax(g, s));
+function dropOff(g, a, wants) {
+  const all = Object.values(g.stations).filter((s) => s.in && can.dropAt(a, s) && a.stack.some((it) => wants(s, it)));
+  const open = all.filter((s) => a.stack.some((it) => wants(s, it) && canTake(g, s, it)));
   const st = best(a, open.map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s))
-    || best(a, stations.filter(wants).map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s));
+    || best(a, all.map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s));
   return st && st.s.in;
 }
-function pickUp(g, a, stations) {
-  const st = best(a, stations.map((s) => ({ s, pos: s.out })), (o) => o.s.outQ.length, (o) => lv(g, o.s));
+function pickUp(g, a) {
+  const sources = Object.values(g.stations).filter((s) => s.outQ.length && can.pickFrom(g, a, s, s.outQ.at(-1)));
+  const st = best(a, sources.map((s) => ({ s, pos: s.out })), (o) => o.s.outQ.length, (o) => lv(g, o.s));
   return st && st.s.out;
 }
 
 // Where a worker should go next: { x, z } or null to head home.
 export function collectTarget(g, a) {
   if (a.kind === 'fisher') return g.spots[a.spot];
-  if (a.kind === 'runner') return pickUp(g, a, stationsOf(g, ['cut']).filter((s) => s.outQ.length && cookable(g, s.outQ.at(-1))));
-  if (a.kind === 'server') return pickUp(g, a, Object.values(g.stations).filter((s) => s.outQ.length && can.pickFrom(g, a, s, s.outQ.at(-1))));
+  if (a.kind === 'runner' || a.kind === 'server' || a.kind === 'washer') return pickUp(g, a);
   if (a.kind === 'busser') return nearest(a, Object.values(g.tables).filter((t) => t.state === 'dirty'));
   return null;
 }
 
 export function deliverTarget(g, a) {
-  if (a.kind === 'fisher') return dropOff(g, a, stationsOf(g, ['cut']), () => true);
-  if (a.kind === 'runner') return dropOff(g, a, stationsOf(g, cookers), (s) => a.stack.some((it) => accepts(s, it)));
-  if (a.kind === 'server') return PLACES.counter.drop;
-  if (a.kind === 'busser') return PLACES.bin;
+  if (a.kind === 'fisher' || a.kind === 'runner') return dropOff(g, a, (s, it) => accepts(s, it));
+  if (a.kind === 'server' || a.kind === 'washer') return PLACES.counter.drop;
+  if (a.kind === 'busser') {
+    const sink = g.stations.sink;
+    return sink && canTake(g, sink, 'plate') ? sink.in : PLACES.bin;
+  }
   return null;
 }
 
 function stepHelper(g, a, dt) {
+  // Station chefs and the cashier stay at their posts
+  if (a.kind === 'chef') { walk(a, STATIONS[a.station].chef, a.speed, dt); a.working = !!g.stations[a.station]?.busy; return; }
+  if (a.kind === 'cashier') { walk(a, cashierPost(), a.speed, dt); return; }
   if (a.mode === 'deliver' && !a.stack.length) a.mode = 'collect';
   let target;
   if (a.mode === 'collect') {
@@ -504,6 +589,7 @@ export function step(g, dt) {
     interact(g, a, dt);
   }
   stepStations(g, dt);
+  stepDock(g, dt);
   stepCustomers(g, dt);
   stepBoat(g, dt);
 }
@@ -566,20 +652,24 @@ export function claimBoat(g, watched) {
 // Rules for future updates so nobody loses progress:
 //   - Never reuse or rename a pad id, station id, spot id, table id, or item id. Add new ones instead.
 //   - If something must be renamed or removed, bump SAVE_VERSION and convert old saves in migrate().
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
-// Upgrades old saves one version at a time. Example for a future v2 that renamed a pad:
-//   if (data.v === 1) { data.built = data.built.map((id) => (id === 'oldId' ? 'newId' : id)); data.v = 2; }
 export function migrate(data) {
   const out = JSON.parse(JSON.stringify(data || {}));
   if (!out.v) out.v = 1;
+  // v2: the squid hole moved out past the new reef pier, so anyone who'd reached it gets the reef pier too
+  if (out.v === 1) {
+    out.built = out.built || [];
+    if (out.built.includes('squid') && !out.built.includes('pier3')) out.built.push('pier3');
+    out.v = 2;
+  }
   return out;
 }
 
 export function serialize(g) {
   return {
     v: SAVE_VERSION, stars: g.stars, t: g.t,
-    cash: g.cash, earned: g.earned, cashPile: g.cashPile,
+    cash: g.cash, earned: g.earned, cashPile: g.cashPile, plates: g.plates, dockT: g.dockT,
     built: [...g.built], padPaid: g.padPaid, levels: g.levels,
     stations: Object.fromEntries(Object.values(g.stations).map((s) => [s.id, { inQ: s.inQ, outQ: s.outQ, busy: s.busy }])),
     tables: Object.fromEntries(Object.values(g.tables).map((t) => [t.id, { state: t.state === 'taken' ? 'free' : t.state, plates: t.plates }])),
@@ -600,6 +690,7 @@ export function restore(raw) {
   const items = (list) => (Array.isArray(list) ? list.filter((it) => ITEMS[it]) : []);
   g.t = num(data.t);
   g.cash = num(data.cash); g.earned = num(data.earned); g.cashPile = num(data.cashPile);
+  g.plates = Math.min(PLATES.rackMax, num(data.plates)); g.dockT = num(data.dockT);
   g.padPaid = data.padPaid || {};
   g.levels = data.levels || {};
   for (const [id, s] of Object.entries(data.stations || {})) {

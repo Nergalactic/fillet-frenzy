@@ -1,17 +1,27 @@
 // Headless balance check: a bot plays the shack until it catches the giant squid and sells.
-// Run with: npm run sim
-import { createGame, step, visiblePads, padPos, menu, sellable, ZONE, bufMax, counterMax, upgradePads } from '../src/logic.js';
-import { PLACES, RECIPES, SPOTS, SELL_PAD, ITEMS } from '../src/config.js';
+// Run with: npm run sim            (add a star count: npm run sim -- 2)
+//           NO_UPGRADES=1 npm run sim
+import { createGame, step, visiblePads, padPos, sellable, ZONE, counterMax, upgradePads, canTake, accepts } from '../src/logic.js';
+import { PLACES, RECIPES, SELL_PAD, ITEMS, PLATES } from '../src/config.js';
 
 const stars = Number(process.argv[2] || 0);
 const g = createGame(stars);
-const dt = 1 / 30, LIMIT = 90 * 60;
+const dt = 1 / 30, LIMIT = 120 * 60;
 const p = g.player;
 const log = [], ups = [];
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const d = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
-const cookers = ['grill', 'fryer', 'sushi'];
+const FISH_ORDER = ['squid', 'octopus', 'lobster', 'tuna', 'crab', 'salmon', 'sardine'];
 let fishingAt = null, sold = false;
+
+// What a station would turn this item into (for picking the most valuable destination)
+function outputOf(st, it) {
+  const r = RECIPES[st.type];
+  if (r.makes) return r.makes[it];
+  if (r.combo) return it === r.combo.with ? Object.values(r.combo.makes)[0] : r.combo.makes[it];
+  return null;
+}
+const value = (it) => (it && ITEMS[it]?.price) || 0;
 
 function target() {
   // Everything buyable: build pads plus (unless NO_UPGRADES) upgrade pads
@@ -21,52 +31,55 @@ function target() {
   // Like a sensible player: build things first, and take an upgrade when it's cheap next to the next build
   const builds = pads.filter((x) => !x.key.includes('#'));
   const nextBuild = builds.reduce((m, x) => (!m || left(x) < left(m) ? x : m), null);
-  const ups = pads.filter((x) => x.key.includes('#') && (!nextBuild || left(x) <= left(nextBuild) * 0.5));
-  const cheapest = [nextBuild, ...ups].filter(Boolean).reduce((m, x) => (!m || left(x) < left(m) ? x : m), null);
+  const upgradesOk = pads.filter((x) => x.key.includes('#') && (!nextBuild || left(x) <= left(nextBuild) * Number(process.env.UPRATIO || 0.3)));
+  const cheapest = [nextBuild, ...upgradesOk].filter(Boolean).reduce((m, x) => (!m || left(x) < left(m) ? x : m), null);
   const need = cheapest ? left(cheapest) : Infinity;
   if (g.squidCaught) return SELL_PAD;
+  // Once the squid hole is open, go get it
+  if (g.spots.sq && (p.stack.length < p.cap || fishingAt === 'sq')) { fishingAt = 'sq'; return g.spots.sq; }
   if (cheapest && g.cash >= need) return cheapest.pos;
   if (cheapest && g.cash + g.cashPile >= need) return PLACES.counter.cash;
 
   const st = Object.values(g.stations);
-  const helpers = new Set(g.agents.map((a) => a.kind));
   // Keep grabbing while standing at a pile with room left, like a person would
-  const here = st.find((s) => s.outQ.length && d(p, s.out) < ZONE && !(helpers.has('runner') && s.type === 'cut'));
+  const here = st.find((s) => s.outQ.length && d(p, s.out) < ZONE);
   if (here && p.stack.length < p.cap && !fishingAt) return here.out;
-  // Deliver what we're carrying
+  // Deliver what we're carrying, to wherever makes it most valuable
   if (p.stack.length && !(fishingAt && p.stack.length < p.cap)) {
     fishingAt = null;
-    const top = p.stack;
-    if (top.includes('plate')) return PLACES.bin;
-    const raw = top.find((it) => !sellable(it) && it !== 'plate');
-    if (raw) {
-      const cut = st.filter((s) => s.type === 'cut' && s.inQ.length < bufMax(g, s)).sort((a, b) => d(p, a.in) - d(p, b.in))[0];
-      if (cut) return cut.in;
+    if (p.stack.includes('plate')) return g.stations.sink && canTake(g, g.stations.sink, 'plate') ? g.stations.sink.in : PLACES.bin;
+    if (p.stack.includes('cleanPlate') && g.plates < PLATES.rackMax) return PLACES.counter.drop;
+    let bestDest = null, bestVal = -1;
+    for (const it of p.stack) {
+      for (const s of st) {
+        if (s.type === 'sink' || !canTake(g, s, it)) continue;
+        const v = value(outputOf(s, it)) + 0.01;
+        if (v > bestVal) { bestVal = v; bestDest = s.in; }
+      }
+      if (sellable(it) && g.counter.length < counterMax(g) && value(it) > bestVal) { bestVal = value(it); bestDest = PLACES.counter.drop; }
     }
-    for (const it of top) {
-      const cook = st.filter((s) => cookers.includes(s.type) && RECIPES[s.type].makes[it] && s.inQ.length < bufMax(g, s))
-        .sort((a, b) => ITEMS[RECIPES[b.type].makes[it]].price - ITEMS[RECIPES[a.type].makes[it]].price)[0];
-      if (cook) return cook.in;
-    }
-    if (g.counter.length < counterMax(g)) return PLACES.counter.drop;
+    if (bestDest) return bestDest;
+    return PLACES.bin;
   }
-  // Pick up finished food, best first
-  const outs = st.filter((s) => s.outQ.length && !(helpers.has('runner') && s.type === 'cut'))
-    .sort((a, b) => (cookers.includes(b.type) ? 1 : 0) - (cookers.includes(a.type) ? 1 : 0));
-  if (outs.length && !fishingAt && (!helpers.has('server') || outs[0].type === 'cut')) return outs[0].out;
-  if (!helpers.has('busser')) {
+  // Pick up from the biggest finished pile
+  const outs = st.filter((s) => s.outQ.length).sort((a, b) => b.outQ.length - a.outQ.length);
+  if (outs.length && !fishingAt && outs[0].outQ.length >= 3) return outs[0].out;
+  if (!g.agents.some((a) => a.kind === 'busser')) {
     const dirty = Object.values(g.tables).find((t) => t.state === 'dirty');
     if (dirty && !fishingAt) return dirty;
   }
   if (g.cashPile > 40 && !fishingAt) return PLACES.counter.cash;
-  // Fish at the best spot no helper is working
+  if (outs.length && !fishingAt) return outs[0].out;
+  // Fish at the most valuable spot no fisher is working
   const taken = new Set(g.agents.filter((a) => a.kind === 'fisher').map((a) => a.spot));
-  const order = ['sq', 't1', 't2', 's1', 's2'];
-  const spot = order.map((id) => g.spots[id]).find((s) => s && !taken.has(s.id)) || g.spots.s1;
+  const spots = Object.values(g.spots).filter((s) => !taken.has(s.id))
+    .sort((a, b) => FISH_ORDER.indexOf(a.fish) - FISH_ORDER.indexOf(b.fish));
+  const spot = spots[0] || g.spots.s1;
   fishingAt = spot.id;
   return spot;
 }
 
+let lastEarned = 0;
 while (g.t < LIMIT && !sold) {
   const t = target();
   const dx = t.x - p.x, dz = t.z - p.z, dd = Math.hypot(dx, dz);
@@ -81,8 +94,9 @@ while (g.t < LIMIT && !sold) {
     if (e.type === 'sell') { log.push(`${mmss(g.t).padStart(6)}  SOLD for ${e.stars} star(s), earned $${Math.round(g.earned)}`); sold = true; }
   }
   g.events.length = 0;
+  if (process.env.RATE && Math.abs(g.t % 300) < dt) { log.push(`        [${mmss(g.t)}] $/min over last 5 min: ${Math.round((g.earned - lastEarned) / 5)}`); lastEarned = g.earned; }
 }
 console.log(`stars at start: ${stars}`);
 console.log(log.join('\n'));
-console.log(`\nupgrades bought (${ups.length}): ${ups.join(', ')}`);
+console.log(`\nupgrades bought: ${ups.length}`);
 if (!sold) console.log(`\nnot finished after ${mmss(g.t)}: cash $${Math.round(g.cash)}, pile $${Math.round(g.cashPile)}, earned $${Math.round(g.earned)}, next pads: ${visiblePads(g).map((x) => x.label).join(', ')}`);
