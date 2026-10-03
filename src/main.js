@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createGame, step, visiblePads, padPos, playerStuck } from './logic.js';
+import { createGame, step, visiblePads, padPos, playerStuck, upgradePads } from './logic.js';
 import { STARS } from './config.js';
 import { createRenderer } from './render.js';
 import { createInput } from './input.js';
@@ -11,7 +11,7 @@ const params = new URLSearchParams(location.search);
 // Stars persist between runs in this browser
 let stars = 0;
 try { stars = Number(localStorage.getItem('ff-stars')) || 0; } catch { /* storage blocked */ }
-const g = createGame(stars, (Date.now() % 100000) | 0);
+let g = createGame(stars, (Date.now() % 100000) | 0);
 
 // ---------- three ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -30,7 +30,8 @@ addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
-scene.add(new THREE.HemisphereLight(0xe6f6ff, 0xd9b77a, 1.3));
+const hemi = new THREE.HemisphereLight(0xe6f6ff, 0xd9b77a, 1.3);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff1d6, 1.5);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -60,7 +61,7 @@ function banner(big, small = '', secs = 2.6) {
 }
 const money = (n) => `$${Math.floor(n).toLocaleString()}`;
 
-const view = createRenderer(g, scene, { popup });
+let view = createRenderer(g, scene, { popup });
 const readInput = createInput($('stick'), $('knob'));
 
 // ---------- events that touch the HUD ----------
@@ -70,6 +71,14 @@ function onEvent(e) {
     const verb = e.pad.kind === 'helper' ? 'HIRED!' : e.pad.kind === 'upgrade' ? 'UPGRADED!' : e.pad.kind === 'area' ? 'OPEN!' : 'BUILT!';
     banner(`${e.pad.label.replace(/^Hire an? /, '').toUpperCase()} ${verb}`);
   }
+  if (e.type === 'upgraded') {
+    const id = e.up.id;
+    const what = id.startsWith('st:') ? 'Works faster and holds more'
+      : id === 'counter' ? (e.level <= 3 ? 'New register! More customers, more room' : 'More customers, more room')
+      : id.startsWith('spot:') ? 'Fish bite faster'
+      : 'Helpers carry more and move faster';
+    banner(`${e.up.name.toUpperCase()} LV ${e.level}`, what);
+  }
   if (e.type === 'legend') {
     sfx.legend();
     banner('LEGENDARY CATCH!', 'Giant squid! A Sell the Shack pad just appeared by the tables.', 4.5);
@@ -77,6 +86,7 @@ function onEvent(e) {
   if (e.type === 'sell') {
     sfx.sold();
     const total = stars + e.stars;
+    stars = total;
     try { localStorage.setItem('ff-stars', String(total)); } catch { /* storage blocked */ }
     $('soldStars').textContent = `+${e.stars} ★`;
     $('soldText').textContent = `You earned ${money(g.earned)} this run. Prices are now +${Math.round(STARS.priceBonus * total * 100)}% forever.`;
@@ -109,6 +119,8 @@ function tick() {
   // HUD
   $('cash').textContent = money(g.cash);
   $('stars').textContent = `★ ${g.stars}`;
+  $('bonus').hidden = !g.stars;
+  $('bonus').textContent = `+${Math.round(STARS.priceBonus * g.stars * 100)}% prices`;
   $('basket').textContent = `BASKET ${g.player.stack.length}/${g.player.cap}`;
   $('basket').classList.toggle('full', g.player.stack.length >= g.player.cap);
   const next = visiblePads(g).reduce((m, p) => (!m || p.price < m.price ? p : m), null);
@@ -145,7 +157,20 @@ function start() {
   clock.getDelta();
 }
 $('startBtn').addEventListener('click', start);
-$('again').addEventListener('click', () => location.reload());
+// Start the next shack in place, so stars carry over even where the browser won't save them
+function newShack() {
+  scene.clear();
+  scene.add(hemi, sun, sun.target);
+  g = createGame(stars, (Date.now() % 100000) | 0);
+  view = createRenderer(g, scene, { popup });
+  if (window.game) window.game.g = g;
+  camera.position.set(g.player.x, 19, g.player.z + 14);
+  $('sold').classList.remove('show');
+  banner(`★ ${stars} · PRICES +${Math.round(STARS.priceBonus * stars * 100)}%`, 'Every customer pays more in this shack', 3.5);
+  running = true;
+  clock.getDelta();
+}
+$('again').addEventListener('click', newShack);
 addEventListener('pointerdown', unlock);
 addEventListener('keydown', unlock);
 $('mute').textContent = isMuted() ? 'SOUND OFF' : 'SOUND ON';
@@ -156,5 +181,5 @@ $('mute').addEventListener('click', (e) => {
 });
 if (params.has('play')) start();
 if (params.has('debug')) {
-  window.game = { g, give(n) { g.cash += n; }, goto(x, z) { g.player.x = x; g.player.z = z; }, pads: () => visiblePads(g).map(padPos) };
+  window.game = { g, give(n) { g.cash += n; }, goto(x, z) { g.player.x = x; g.player.z = z; }, pads: () => visiblePads(g).map(padPos), ups: () => upgradePads(g) };
 }

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import {
   ITEMS, AREAS, PLACES, STATIONS, SPOTS, TABLES, STATION_LABELS, SELL_PAD,
 } from './config.js';
-import { visiblePads, padPos, ZONE, TABLE_ZONE } from './logic.js';
+import { visiblePads, padPos, ZONE, TABLE_ZONE, upgradePads, level } from './logic.js';
 import * as M from './models.js';
 import { sfx } from './sound.js';
 
@@ -248,22 +248,48 @@ export function createRenderer(g, scene, { popup }) {
   const pads = {};
   const sellPad = makePad({ label: 'SELL THE SHACK', price: null, id: 'sell' }, SELL_PAD, 0xffc94d);
   sellPad.grp.visible = false;
-  function makePad(p, pos, color = 0xffe08a) {
+  function makePad(p, pos, color = 0xffe08a, size = 2.8, labelScale = 3.8, labelY = 2.2) {
     const grp = new THREE.Group();
-    const tile = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.8), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, depthWrite: false }));
+    const tile = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, depthWrite: false }));
     tile.rotation.x = -Math.PI / 2; tile.position.y = 0.1;
-    const fill = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.8), new THREE.MeshBasicMaterial({ color: 0x5cd65c, transparent: true, opacity: 0.8, depthWrite: false }));
+    const fill = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ color: 0x5cd65c, transparent: true, opacity: 0.8, depthWrite: false }));
     fill.rotation.x = -Math.PI / 2; fill.position.y = 0.11; fill.scale.set(1, 0.001, 1);
-    const border = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(2.8, 2.8)), new THREE.LineBasicMaterial({ color: 0xffffff }));
+    const border = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(size, size)), new THREE.LineBasicMaterial({ color: 0xffffff }));
     border.rotation.x = -Math.PI / 2; border.position.y = 0.12;
     const lines = p.price === null ? [{ text: p.label, size: 66 }, { text: 'Stand here', size: 52, color: '#2f7d32' }]
-      : [{ text: p.label, size: 64 }, { text: `$${p.price.toLocaleString()}`, size: 72, color: '#2f7d32' }];
-    const label = sprite(lines, 3.8, { h: 230 });
-    label.position.y = 2.2;
+      : [{ text: p.label, size: 64 }, { text: `$${p.price.toLocaleString()}`, size: 72, color: p.priceColor || '#2f7d32' }];
+    const label = sprite(lines, labelScale, { h: 230, bg: p.bg });
+    label.position.y = labelY;
     grp.add(tile, fill, border, label);
     grp.position.set(pos.x, 0, pos.z);
     scene.add(grp);
-    return { grp, fill, label };
+    return { grp, fill, label, size, baseY: labelY };
+  }
+  const setFill = (pad, f) => { pad.fill.scale.set(1, Math.max(0.001, f), 1); pad.fill.position.z = (pad.size / 2) * (1 - f); };
+
+  // Upgrade pads (blue, smaller) and the level badges they leave behind
+  const upPads = {};
+  const badges = {};
+  function badge(id, text, pos) {
+    if (badges[id]) scene.remove(badges[id]);
+    const b = sprite([{ text, size: 80 }], 1.5, { bg: 'rgba(31,111,235,0.95)', fg: '#ffffff', w: 256, h: 128, radius: 40 });
+    b.position.set(pos.x, pos.y, pos.z);
+    scene.add(b);
+    badges[id] = b;
+  }
+  const registerMeshes = [];
+  function syncRegisters() {
+    const want = Math.min(3, level(g, 'counter')) - 1;
+    while (registerMeshes.length < want) {
+      const x = [0.1, 1.9][registerMeshes.length];
+      const r = new THREE.Group();
+      M.part(r, new THREE.BoxGeometry(0.9, 0.5, 0.7), 0x5b6670, 0, 0.25, 0);
+      M.part(r, new THREE.BoxGeometry(0.7, 0.35, 0.05), M.mat(0x5fd38a, { emissive: 0x1d6b3a }), 0, 0.38, 0.36, false);
+      r.position.set(x, 1.22, 0);
+      counter.add(r);
+      registerMeshes.push(r);
+      pops.push({ obj: r, t: 0 });
+    }
   }
 
   // People
@@ -291,7 +317,7 @@ export function createRenderer(g, scene, { popup }) {
   function custRig(c) {
     if (custRigs[c.id]) return custRigs[c.id];
     const r = M.person({ shirt: SHIRTS[Math.floor(c.look * 7)], skin: SKINS[Math.floor(c.look * 37) % 4], pants: [0x3d405b, 0x6d597a, 0x355070][Math.floor(c.look * 13) % 3] });
-    const bubble = sprite([{ text: ITEMS[c.want].label, size: 70 }], 2.6, { h: 150 });
+    const bubble = sprite([{ text: `${ITEMS[c.want].label} $${Math.round(ITEMS[c.want].price * g.mult)}`, size: 70 }], 2.9, { h: 150 });
     bubble.position.y = 2.75;
     r.group.add(bubble);
     r.group.position.set(c.x, 0, c.z);
@@ -323,7 +349,7 @@ export function createRenderer(g, scene, { popup }) {
     if (kind === 'table') return new THREE.Vector3(TABLES[ref].x, 1.05, TABLES[ref].z);
     if (kind === 'bin') return new THREE.Vector3(PLACES.bin.x, 1.3, PLACES.bin.z);
     if (kind === 'cash') return cashSlot(Math.max(0, cashBills.length - 1)).clone();
-    if (kind === 'pad') { const p = pads[ref]; return p ? p.grp.position.clone().setY(0.3) : new THREE.Vector3(); }
+    if (kind === 'pad') { const p = pads[ref] || upPads[id.slice(4)]; return p ? p.grp.position.clone().setY(0.3) : new THREE.Vector3(); }
     return new THREE.Vector3();
   }
 
@@ -395,6 +421,15 @@ export function createRenderer(g, scene, { popup }) {
       case 'tip':
         popup(`tip +$${Math.round(e.amount)}`, new THREE.Vector3(TABLES[e.table].x, 3, TABLES[e.table].z), 'money');
         break;
+      case 'upgraded': {
+        sfx.build();
+        puff(e.up, 0xcfe8ff, 10, 0.45);
+        const id = e.up.id, text = `Lv ${e.level}`;
+        if (id.startsWith('st:')) { const c = STATIONS[id.slice(3)]; badge(id, text, { x: c.x + 1.9, y: 3.1, z: c.z }); }
+        else if (id === 'counter') { badge(id, text, { x: PLACES.counter.x + 2.3, y: 3.0, z: PLACES.counter.z }); syncRegisters(); }
+        else if (id.startsWith('spot:')) { const s = SPOTS[id.slice(5)]; badge(id, text, { x: s.water.x, y: 3.3, z: s.water.z }); }
+        break;
+      }
       case 'built': {
         sfx.build();
         const pos = padPos(e.pad);
@@ -570,6 +605,16 @@ export function createRenderer(g, scene, { popup }) {
       pads[p.id].label.position.y = 2.2 + Math.sin(time * 3 + p.price) * 0.08;
     }
     for (const id of Object.keys(pads)) if (!vis.has(id)) { scene.remove(pads[id].grp); delete pads[id]; }
+    const ups = upgradePads(g);
+    const upKeys = new Set(ups.map((u) => u.key));
+    for (const u of ups) {
+      if (!upPads[u.key]) {
+        upPads[u.key] = makePad({ label: `${u.name} Lv ${u.level + 1}`, price: u.price, bg: 'rgba(225,240,255,0.95)', priceColor: '#1f6feb' }, u, 0x8fd0ff, 2.0, 2.9, 1.8);
+        pops.push({ obj: upPads[u.key].grp, t: 0 });
+      }
+      setFill(upPads[u.key], Math.min(1, (g.padPaid[u.key] || 0) / u.price));
+    }
+    for (const k of Object.keys(upPads)) if (!upKeys.has(k)) { scene.remove(upPads[k].grp); delete upPads[k]; }
     sellPad.grp.visible = g.squidCaught;
     if (g.squidCaught) {
       const f = Math.min(1, Math.max(0, g.sellT) / 1.5);

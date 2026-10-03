@@ -21,6 +21,7 @@
     #cash { font-size: 36px; color: var(--mint); line-height: 1; }
     .right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
     #stars { font-size: 28px; color: var(--gold); line-height: 1; }
+    #bonus { font-size: 15px; color: var(--gold); }
     #mute { pointer-events: auto; font-family: inherit; font-size: 12px; letter-spacing: 1px; padding: 5px 9px;
       border-radius: 9px; border: 2px solid var(--ink); background: rgba(255,255,255,.85); color: var(--ink); cursor: pointer; }
     #mid { margin: 8px auto 0; text-align: center; display: flex; flex-direction: column; gap: 4px; align-items: center; }
@@ -67,7 +68,7 @@
   <div id="hud" hidden>
     <div class="row">
       <div id="cash" class="stroke">$0</div>
-      <div class="right"><div id="stars" class="stroke">★ 0</div><button id="mute">SOUND ON</button></div>
+      <div class="right"><div id="stars" class="stroke">★ 0</div><div id="bonus" class="stroke" hidden>+50% prices</div><button id="mute">SOUND ON</button></div>
     </div>
     <div id="mid">
       <div id="basket" class="stroke">BASKET 0/8</div>

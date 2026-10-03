@@ -2,7 +2,7 @@
 // Rendering reads the state and the `events` list each frame.
 import {
   ITEMS, RECIPES, FISH, PLAYER, HELPER, CUSTOMERS, STARS, AREAS, PLACES,
-  STATIONS, SPOTS, TABLES, PADS, PADS_SHOWN, SELL_PAD,
+  STATIONS, SPOTS, TABLES, PADS, PADS_SHOWN, SELL_PAD, LEVELS, NAMES,
 } from './config.js';
 
 export const ZONE = 1.7;       // reach for drop/pick zones, spots and pads
@@ -10,6 +10,7 @@ export const TABLE_ZONE = 2.6;
 export const BUFFER_MAX = 12;
 export const COUNTER_MAX = 24;
 const SELL_HOLD = 1.5;
+export const PAD_HOLD = 0.35;
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 export const sellable = (item) => ITEMS[item]?.price !== undefined;
@@ -44,7 +45,7 @@ export function createGame(stars = 0, seed = 7) {
     counter: [],
     agents: [],
     customers: [], custT: 1.5, custSeq: 0,
-    built: new Set(), padPaid: {},
+    built: new Set(), padPaid: {}, levels: {},
     squidCaught: false, sellT: 0,
     events: [],
   };
@@ -103,12 +104,55 @@ function build(g, p) {
     if (p.then) g.spots[p.then] = { id: p.then, ...SPOTS[p.then] };
   } else if (p.kind === 'helper') {
     const h = makeAgent(`${p.ref}${g.agents.length}`, p.ref, PLACES.helperHome.x, PLACES.helperHome.z, { spot: p.spot });
+    applyStaff(g, h);
     g.agents.push(h);
   } else if (p.kind === 'upgrade') {
     if (p.ref === 'cap') g.player.cap = p.value;
     if (p.ref === 'speed') g.player.speedMult = p.value;
   }
   g.events.push({ type: 'built', pad: p });
+}
+
+// ---------- upgrades ----------
+export const level = (g, id) => g.levels[id] || 1;
+export const bufMax = (g, st) => BUFFER_MAX + LEVELS.station.buffer * (level(g, `st:${st.id}`) - 1);
+export const counterMax = (g) => COUNTER_MAX + LEVELS.counter.stock * (level(g, 'counter') - 1);
+const cost = (base, lv) => Math.round(base * Math.pow(LEVELS.growth, lv - 1));
+
+// Every upgrade pad that's on the map right now
+export function upgradePads(g) {
+  const out = [];
+  const add = (id, name, base, pos) => {
+    const lv = level(g, id);
+    if (lv < LEVELS.max) out.push({ id, name, level: lv, price: cost(base, lv), x: pos.x, z: pos.z, key: `${id}#${lv}` });
+  };
+  for (const st of Object.values(g.stations)) add(`st:${st.id}`, NAMES[st.type], LEVELS.station.base[st.type], { x: st.x, z: st.z + 2.7 });
+  add('counter', 'Counter', LEVELS.counter.base, LEVELS.counter);
+  for (const s of Object.values(g.spots)) if (s.up) add(`spot:${s.id}`, 'Fishing spot', LEVELS.spot.base[s.fish], s.up);
+  if (g.agents.length > 1) add('staff', 'Staff training', LEVELS.staff.base, LEVELS.staff);
+  return out;
+}
+
+function applyStaff(g, a) {
+  const lv = level(g, 'staff');
+  a.cap = HELPER.cap + LEVELS.staff.cap * (lv - 1);
+  a.speed = HELPER.speed * (1 + LEVELS.staff.speed * (lv - 1));
+}
+
+function upgrade(g, u) {
+  g.levels[u.id] = u.level + 1;
+  if (u.id === 'staff') for (const a of g.agents) if (a.kind !== 'player') applyStaff(g, a);
+  g.events.push({ type: 'upgraded', up: u, level: u.level + 1 });
+}
+
+// Stand on a pad and cash pours in over about a second
+function payInto(g, a, key, price, dt) {
+  const paid = g.padPaid[key] || 0;
+  const pay = Math.min(g.cash, price - paid, Math.max(price * 1.1 * dt, 20 * dt));
+  g.cash -= pay;
+  g.padPaid[key] = paid + pay;
+  g.events.push({ type: 'cash', amount: pay, from: 'agent:player', to: `pad:${key}` });
+  return g.padPaid[key] >= price - 1e-6;
 }
 
 // ---------- what each kind of worker is allowed to do ----------
@@ -157,7 +201,7 @@ function interact(g, a, dt) {
     fishing = true;
     if (!room()) { a.catchT = 0; break; }
     a.catchT += dt;
-    if (a.catchT >= FISH[spot.fish].every) {
+    if (a.catchT >= FISH[spot.fish].every / (1 + LEVELS.spot.speed * (level(g, `spot:${spot.id}`) - 1))) {
       a.catchT = 0;
       a.stack.push(spot.fish);
       g.events.push({ type: 'catch', agent: a.id, spot: spot.id, item: spot.fish });
@@ -169,7 +213,7 @@ function interact(g, a, dt) {
 
   for (const st of Object.values(g.stations)) {
     // Drop raw/prepped items into a station
-    if (dist(a, st.in) < ZONE && can.dropAt(a, st) && st.inQ.length < BUFFER_MAX) {
+    if (dist(a, st.in) < ZONE && can.dropAt(a, st) && st.inQ.length < bufMax(g, st)) {
       const i = a.stack.findLastIndex((it) => accepts(st, it));
       if (i >= 0 && ready()) {
         const [it] = a.stack.splice(i, 1);
@@ -189,7 +233,7 @@ function interact(g, a, dt) {
   }
 
   // Counter: drop anything sellable
-  if (can.counter(a) && dist(a, PLACES.counter.drop) < ZONE && g.counter.length < COUNTER_MAX) {
+  if (can.counter(a) && dist(a, PLACES.counter.drop) < ZONE && g.counter.length < counterMax(g)) {
     const i = a.stack.findLastIndex(sellable);
     if (i >= 0 && ready()) {
       const [it] = a.stack.splice(i, 1);
@@ -231,17 +275,14 @@ function interact(g, a, dt) {
     g.events.push({ type: 'cash', amount: take, from: 'cash', to: 'agent:player' });
   }
 
-  // Build pads drain cash over about a second
-  for (const p of visiblePads(g)) {
-    if (dist(a, padPos(p)) > ZONE || g.cash <= 0) continue;
-    const paid = g.padPaid[p.id] || 0;
-    const pay = Math.min(g.cash, p.price - paid, Math.max(p.price * 1.1 * dt, 20 * dt));
-    g.cash -= pay;
-    g.padPaid[p.id] = paid + pay;
-    g.events.push({ type: 'cash', amount: pay, from: 'agent:player', to: `pad:${p.id}` });
-    if (g.padPaid[p.id] >= p.price - 1e-6) build(g, p);
-    break;
-  }
+  // Build pads and upgrade pads. Cash only starts flowing after you've stood on a pad for a moment,
+  // so walking across one on the way somewhere doesn't spend anything.
+  let on = null;
+  for (const p of visiblePads(g)) if (dist(a, padPos(p)) <= ZONE) { on = { key: p.id, price: p.price, done: () => build(g, p) }; break; }
+  if (!on) for (const u of upgradePads(g)) if (dist(a, u) <= 1.3) { on = { key: u.key, price: u.price, done: () => upgrade(g, u) }; break; }
+  if (on && on.key === g.padHold?.key) g.padHold.t += dt;
+  else g.padHold = on ? { key: on.key, t: 0 } : null;
+  if (on && g.padHold.t >= PAD_HOLD && g.cash > 0 && payInto(g, a, on.key, on.price, dt)) on.done();
 
   // Sell the shack
   if (g.squidCaught && dist(a, SELL_PAD) < ZONE) {
@@ -259,8 +300,8 @@ export function playerStuck(g) {
   if (a.stack.length < a.cap) return false;
   for (const it of a.stack) {
     if (it === 'plate') return false;
-    if (sellable(it) && g.counter.length < COUNTER_MAX) return false;
-    if (Object.values(g.stations).some((s) => accepts(s, it) && s.inQ.length < BUFFER_MAX)) return false;
+    if (sellable(it) && g.counter.length < counterMax(g)) return false;
+    if (Object.values(g.stations).some((s) => accepts(s, it) && s.inQ.length < bufMax(g, s))) return false;
   }
   return true;
 }
@@ -273,9 +314,9 @@ export function starsFor(g) {
 function stepStations(g, dt) {
   for (const st of Object.values(g.stations)) {
     const r = RECIPES[st.type];
-    if (!st.busy && st.inQ.length && st.outQ.length < BUFFER_MAX) {
+    if (!st.busy && st.inQ.length && st.outQ.length < bufMax(g, st)) {
       st.busy = st.inQ.shift();
-      st.timer = r.time * (r.slow?.[st.busy] || 1);
+      st.timer = r.time * (r.slow?.[st.busy] || 1) / (1 + LEVELS.station.speed * (level(g, `st:${st.id}`) - 1));
       st.total = st.timer;
       g.events.push({ type: 'start', station: st.id, item: st.busy });
     }
@@ -292,17 +333,24 @@ function stepStations(g, dt) {
 }
 
 // ---------- customers ----------
-function queueSlot(k) { return { x: PLACES.counter.front.x, z: PLACES.counter.front.z + k * 2.3 }; }
+// Registers sit side by side along the counter; everyone else lines up behind the middle one.
+export const registers = (g) => Math.min(3, level(g, 'counter'));
+function registerSlot(i, r) { const f = PLACES.counter.front; return { x: f.x + (i - (r - 1) / 2) * 1.8, z: f.z }; }
+function lineSlot(j) { const f = PLACES.counter.front; return { x: f.x + Math.floor(j / 6) * 1.6, z: f.z + 2.3 + (j % 6) * 2.3 }; }
 
 function stepCustomers(g, dt) {
   const tables = Object.values(g.tables);
   const queued = g.customers.filter((c) => c.state === 'queue');
-  const every = Math.max(CUSTOMERS.minEvery, CUSTOMERS.baseEvery / (1 + CUSTOMERS.perTable * tables.length));
+  const cl = level(g, 'counter') - 1;
+  const every = Math.max(CUSTOMERS.minEvery / (1 + LEVELS.counter.customers * cl),
+    CUSTOMERS.baseEvery / (1 + CUSTOMERS.perTable * tables.length) / (1 + LEVELS.counter.customers * cl));
   g.custT -= dt;
   if (g.custT <= 0) {
     g.custT = every;
     const m = menu(g);
-    if (queued.length < CUSTOMERS.queueMax && m.length) {
+    // Only people who've reached the line count toward it, so walkers on their way don't block new arrivals
+    const waiting = queued.filter((c) => c.arrived).length;
+    if (waiting < CUSTOMERS.queueMax + LEVELS.counter.queue * cl && queued.length < 30 && m.length) {
       // Favourite dish, weighted toward pricier things on the menu
       const w = m.map((it) => Math.sqrt(ITEMS[it].price));
       let r = g.rng() * w.reduce((a, b) => a + b, 0), want = m[0];
@@ -314,18 +362,28 @@ function stepCustomers(g, dt) {
     }
   }
 
-  queued.forEach((c, k) => {
-    const slot = queueSlot(k);
-    walk(c, slot, CUSTOMERS.speed, dt);
-    if (k !== 0 || dist(c, slot) > 0.4) return;
+  // Each customer keeps the register they're sent to until they've bought something
+  const regs = registers(g);
+  g.regs = g.regs || [];
+  for (let i = 0; i < regs; i++) {
+    if (g.regs[i] !== undefined && queued.some((c) => c.id === g.regs[i])) continue;
+    const next = queued.find((c) => c.reg === undefined);
+    if (next) { next.reg = i; g.regs[i] = next.id; } else g.regs[i] = undefined;
+  }
+  let j = 0;
+  queued.forEach((c) => {
+    const slot = c.reg === undefined ? lineSlot(j++) : registerSlot(c.reg, regs);
+    if (walk(c, slot, CUSTOMERS.speed, dt)) c.arrived = true;
+    if (c.reg === undefined || dist(c, slot) > 0.4) return;
     c.waitT += dt;
     let i = g.counter.lastIndexOf(c.want);
-    if (i < 0 && c.waitT > CUSTOMERS.pickyFor && g.counter.length) {
+    if (i < 0 && c.waitT > CUSTOMERS.pickyFor / (1 + cl) && g.counter.length) {
       i = 0;
       g.counter.forEach((it, j) => { if (ITEMS[it].price > ITEMS[g.counter[i]].price) i = j; });
     }
     if (i < 0) return;
     const [it] = g.counter.splice(i, 1);
+    g.regs[c.reg] = undefined;
     c.food = it;
     const pay = ITEMS[it].price * g.mult;
     g.cashPile += pay;
@@ -399,14 +457,14 @@ export function collectTarget(g, a) {
 
 export function deliverTarget(g, a) {
   if (a.kind === 'fisher') {
-    const st = nearest(a, stationsOf(g, ['cut']).filter((s) => s.inQ.length < BUFFER_MAX));
+    const st = nearest(a, stationsOf(g, ['cut']).filter((s) => s.inQ.length < bufMax(g, s)));
     return st && st.in;
   }
   if (a.kind === 'runner') {
-    const st = nearest(a, stationsOf(g, cookers).filter((s) => s.inQ.length < BUFFER_MAX && a.stack.some((it) => accepts(s, it))));
+    const st = nearest(a, stationsOf(g, cookers).filter((s) => s.inQ.length < bufMax(g, s) && a.stack.some((it) => accepts(s, it))));
     return st && st.in;
   }
-  if (a.kind === 'server') return g.counter.length < COUNTER_MAX ? PLACES.counter.drop : null;
+  if (a.kind === 'server') return g.counter.length < counterMax(g) ? PLACES.counter.drop : null;
   if (a.kind === 'busser') return PLACES.bin;
   return null;
 }

@@ -44,7 +44,7 @@ export const CUSTOMERS = {
   pickyFor: 1.5,          // seconds a customer holds out for their favourite before taking anything
   eatTime: 5,
   tip: 0.5,              // seated customers tip this share of the price when they leave
-  speed: 4.5,
+  speed: 5.5,
 };
 
 export const STARS = {
@@ -66,7 +66,7 @@ export const PLACES = {
   counter: { x: -20, z: 16, drop: { x: -20, z: 13.4 }, front: { x: -20, z: 18.6 }, cash: { x: -15.8, z: 13.4 } },
   bin:     { x: -26, z: 12 },
   shack:   { x: -21, z: 4.5 },
-  enter:   { x: 30, z: 30 },
+  enter:   { x: -12, z: 34 },
   helperHome: { x: -16, z: 5 },
 };
 
@@ -81,10 +81,10 @@ export const STATIONS = {
 
 // Fishing spots sit on the pier's edge; `water` is where the line goes in.
 export const SPOTS = {
-  s1: { fish: 'sardine', x: 4.3,  z: -10, water: { x: 8.5, z: -10 } },
-  s2: { fish: 'sardine', x: -4.3, z: -6,  water: { x: -8.5, z: -6 } },
-  t1: { fish: 'tuna',    x: 4.3,  z: -28, water: { x: 8.5, z: -28 } },
-  t2: { fish: 'tuna',    x: -4.3, z: -22, water: { x: -8.5, z: -22 } },
+  s1: { fish: 'sardine', x: 4.3,  z: -10, water: { x: 8.5, z: -10 },  up: { x: 1.0, z: -8.2 } },
+  s2: { fish: 'sardine', x: -4.3, z: -6,  water: { x: -8.5, z: -6 },  up: { x: -1.0, z: -4.0 } },
+  t1: { fish: 'tuna',    x: 4.3,  z: -28, water: { x: 8.5, z: -28 },  up: { x: 1.0, z: -26.2 } },
+  t2: { fish: 'tuna',    x: -4.3, z: -22, water: { x: -8.5, z: -22 }, up: { x: -1.0, z: -20.0 } },
   sq: { fish: 'squid',   x: 0,    z: -41, water: { x: 0, z: -47 } },
 };
 
@@ -120,4 +120,16 @@ export const PADS = [
   { id: 'squid',   kind: 'area',    ref: 'squid', price: 3000, label: 'Squid hole', x: 0, z: -31.8, then: 'sq' },
 ];
 export const PADS_SHOWN = 3;
+
+// Upgrade pads sit next to each station, the counter, each fishing spot, and the helpers' hangout.
+// They stay out of the build queue above and are always available until level `max`.
+export const LEVELS = {
+  max: 5,
+  growth: 2.2,                 // each level costs this much more than the one before
+  station: { speed: 0.8, buffer: 8, base: { cut: 50, grill: 80, fryer: 130, sushi: 350 } },
+  counter: { base: 80, customers: 0.5, stock: 12, queue: 2, x: -25, z: 16.5 },
+  spot:    { speed: 0.5, base: { sardine: 60, tuna: 250 } },
+  staff:   { base: 250, cap: 3, speed: 0.12, x: -14, z: 1.5 },
+};
+export const NAMES = { cut: 'Cutting board', grill: 'Grill', fryer: 'Fryer', sushi: 'Sushi bar' };
 export const SELL_PAD = { x: -15, z: 26 };
