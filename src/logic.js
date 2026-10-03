@@ -558,3 +558,70 @@ export function claimBoat(g, watched) {
   g.events.push({ type: 'boatReward', offer: o, detail });
   b.state = 'away'; b.t = BOAT.every; b.offer = null;
 }
+
+// ---------- saving ----------
+// A save records what you've built and earned, by id, not where things sit on the map,
+// so updates that move stations, change prices, or add new pads still load old saves.
+//
+// Rules for future updates so nobody loses progress:
+//   - Never reuse or rename a pad id, station id, spot id, table id, or item id. Add new ones instead.
+//   - If something must be renamed or removed, bump SAVE_VERSION and convert old saves in migrate().
+export const SAVE_VERSION = 1;
+
+// Upgrades old saves one version at a time. Example for a future v2 that renamed a pad:
+//   if (data.v === 1) { data.built = data.built.map((id) => (id === 'oldId' ? 'newId' : id)); data.v = 2; }
+export function migrate(data) {
+  const out = JSON.parse(JSON.stringify(data || {}));
+  if (!out.v) out.v = 1;
+  return out;
+}
+
+export function serialize(g) {
+  return {
+    v: SAVE_VERSION, stars: g.stars, t: g.t,
+    cash: g.cash, earned: g.earned, cashPile: g.cashPile,
+    built: [...g.built], padPaid: g.padPaid, levels: g.levels,
+    stations: Object.fromEntries(Object.values(g.stations).map((s) => [s.id, { inQ: s.inQ, outQ: s.outQ, busy: s.busy }])),
+    tables: Object.fromEntries(Object.values(g.tables).map((t) => [t.id, { state: t.state === 'taken' ? 'free' : t.state, plates: t.plates }])),
+    counter: g.counter,
+    agents: g.agents.map((a) => ({ kind: a.kind, x: a.x, z: a.z, stack: a.stack })),
+    squidCaught: g.squidCaught, boosts: g.boosts, boatT: g.boat.state === 'away' ? g.boat.t : 30,
+  };
+}
+
+// Rebuilds a game from a save. Anything the current version doesn't recognise is skipped.
+export function restore(raw) {
+  const data = migrate(raw);
+  const g = createGame(data.stars || 0, (Date.now() % 100000) | 0);
+  const built = new Set(data.built || []);
+  for (const p of PADS) if (built.has(p.id)) build(g, p);
+  g.events.length = 0;
+  const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
+  const items = (list) => (Array.isArray(list) ? list.filter((it) => ITEMS[it]) : []);
+  g.t = num(data.t);
+  g.cash = num(data.cash); g.earned = num(data.earned); g.cashPile = num(data.cashPile);
+  g.padPaid = data.padPaid || {};
+  g.levels = data.levels || {};
+  for (const [id, s] of Object.entries(data.stations || {})) {
+    const st = g.stations[id];
+    if (!st) continue;
+    st.inQ = items(s.inQ).filter((it) => accepts(st, it)).slice(0, bufMax(g, st));
+    st.outQ = items(s.outQ).slice(0, bufMax(g, st));
+    if (s.busy && accepts(st, s.busy)) st.inQ.unshift(s.busy);
+  }
+  for (const [id, t] of Object.entries(data.tables || {})) {
+    if (g.tables[id] && t.state === 'dirty') { g.tables[id].state = 'dirty'; g.tables[id].plates = num(t.plates, 1); }
+  }
+  g.counter = items(data.counter).filter(sellable).slice(0, counterMax(g));
+  (data.agents || []).forEach((s, i) => {
+    const a = g.agents[i];
+    if (!a || a.kind !== s.kind) return;
+    a.x = num(s.x, a.x); a.z = num(s.z, a.z);
+    a.stack = items(s.stack).slice(0, a.cap);
+  });
+  for (const a of g.agents) if (a.kind !== 'player') applyStaff(g, a);
+  g.squidCaught = !!data.squidCaught;
+  g.boosts = { cash: num(data.boosts?.cash), rush: num(data.boosts?.rush) };
+  g.boat.t = num(data.boatT, 60);
+  return g;
+}

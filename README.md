@@ -10,6 +10,8 @@ The mobile ad loop, as the actual game. Run a fish shack on a pier: catch it, cu
 - **Delivery boat:** every couple of minutes a boat docks beside the pier with an optional bonus (2× cash, a staff rush, a cash crate, or a free upgrade). Stand on its gold pad to claim it, or ignore it; it sails off with no penalty. Claims are free today. To use rewarded ads later, change `showRewardedAd()` in `src/ads.js` to call your ad SDK; the game pauses while it runs and only grants the bonus if the ad finishes.
 - **Prestige:** the squid hole at the end of the pier holds the legendary giant squid. Catch one and a Sell the Shack pad appears. Selling earns stars (one, plus another per $25,000 earned that run), each worth +50% prices forever, and you start a new shack. Customer order bubbles show the current price, and the HUD shows your bonus under the star count.
 
+Progress saves automatically every few seconds and when you leave the page. The save lives in your browser for the game's site, so it survives reloads and game updates. Opening the game offers Continue or a fresh shack (stars are always kept).
+
 Sound is synthesized in the browser (no audio files) and starts on your first tap. There's a mute button in the corner.
 
 ## Run it
@@ -38,6 +40,10 @@ Controls: drag anywhere for a floating joystick, or WASD / arrow keys. Add `?pla
 | `src/main.js` | Main loop, HUD, start and sold screens, camera |
 | `scripts/sim.mjs` | Balance check: a bot plays from an empty shack to selling it |
 | `scripts/preview.sh` | Builds a self-contained page for headless screenshot checks |
+
+## Updating without breaking saves
+
+Saves record ids (pads, stations, spots, tables, items), not positions or prices, so moving things around or rebalancing is safe. Never rename or reuse an id; add new ones. If a rename is unavoidable, bump `SAVE_VERSION` and convert old saves in `migrate()` in `src/logic.js`.
 
 ## Balance
 

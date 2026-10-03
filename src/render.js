@@ -482,6 +482,14 @@ export function createRenderer(g, scene, { popup }) {
   for (const id of Object.keys(g.stations)) addStation(id);
   for (const id of Object.keys(g.spots)) addSpot(id);
   for (const id of Object.keys(g.tables)) addTable(id);
+  // Level badges and registers for a restored save
+  for (const [id, lv] of Object.entries(g.levels)) {
+    if (lv < 2) continue;
+    if (id.startsWith('st:') && STATIONS[id.slice(3)]) { const c = STATIONS[id.slice(3)]; badge(id, `Lv ${lv}`, { x: c.x + 1.9, y: 3.1, z: c.z }); }
+    else if (id === 'counter') badge(id, `Lv ${lv}`, { x: PLACES.counter.x + 2.3, y: 3.0, z: PLACES.counter.z });
+    else if (id.startsWith('spot:') && SPOTS[id.slice(5)]) { const s = SPOTS[id.slice(5)]; badge(id, `Lv ${lv}`, { x: s.water.x, y: 3.3, z: s.water.z }); }
+  }
+  syncRegisters();
   pops.length = 0;
 
   // ---------- per-frame sync ----------

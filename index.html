@@ -61,6 +61,7 @@
     .sub { font-size: 20px; max-width: 420px; }
     button.big { font-family: inherit; font-size: 24px; padding: 14px 30px; border-radius: 16px; border: 3px solid var(--ink);
       background: var(--mint); color: var(--ink); cursor: pointer; box-shadow: 0 5px 0 var(--ink); margin-top: 10px; }
+    button.link { font-family: inherit; font-size: 15px; background: none; border: none; color: #fff; text-decoration: underline; cursor: pointer; margin-top: 4px; }
     button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
     @media (prefers-reduced-motion: reduce) { .pop { animation-duration: .01s; } #banner { transition: none; } #next.warn { animation: none; } }
   </style>
@@ -83,7 +84,9 @@
   <div id="start" class="overlay stroke">
     <div class="title">FILLET<br />FRENZY</div>
     <div class="sub" id="startStars">Catch it. Cut it. Cook it. Sell it.</div>
+    <div class="sub" id="savedInfo" hidden></div>
     <button class="big" id="startBtn">Open the shack</button>
+    <button id="freshBtn" class="link" hidden>Start a new shack instead</button>
   </div>
   <div id="sold" class="overlay stroke">
     <div class="title" style="font-size: clamp(40px, 12vw, 80px)">SOLD THE SHACK!</div>

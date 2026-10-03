@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createGame, step, visiblePads, padPos, playerStuck, upgradePads, claimBoat } from './logic.js';
+import { createGame, step, visiblePads, padPos, playerStuck, upgradePads, claimBoat, serialize, restore } from './logic.js';
 import { STARS } from './config.js';
 import { createRenderer } from './render.js';
 import { createInput } from './input.js';
@@ -12,7 +12,24 @@ const params = new URLSearchParams(location.search);
 // Stars persist between runs in this browser
 let stars = 0;
 try { stars = Number(localStorage.getItem('ff-stars')) || 0; } catch { /* storage blocked */ }
-let g = createGame(stars, (Date.now() % 100000) | 0);
+
+// Saved shack, if there is one
+const SAVE_KEY = 'ff-save';
+let saved = null;
+try { saved = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch { saved = null; }
+if (saved && typeof saved !== 'object') saved = null;
+if (saved) stars = Math.max(stars, Number(saved.stars) || 0);
+let g = null;
+try { if (saved) { g = restore({ ...saved, stars }); } } catch { g = null; saved = null; }
+if (!g) g = createGame(stars, (Date.now() % 100000) | 0);
+
+function save() {
+  if (!running) return;
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(serialize(g))); } catch { /* storage blocked */ }
+}
+setInterval(save, 5000);
+addEventListener('pagehide', save);
+document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 
 // ---------- three ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -97,7 +114,7 @@ function onEvent(e) {
     sfx.sold();
     const total = stars + e.stars;
     stars = total;
-    try { localStorage.setItem('ff-stars', String(total)); } catch { /* storage blocked */ }
+    try { localStorage.setItem('ff-stars', String(total)); localStorage.removeItem(SAVE_KEY); } catch { /* storage blocked */ }
     $('soldStars').textContent = `+${e.stars} ★`;
     $('soldText').textContent = `You earned ${money(g.earned)} this run. Prices are now +${Math.round(STARS.priceBonus * total * 100)}% forever.`;
     $('banner').classList.remove('show');
@@ -165,6 +182,27 @@ requestAnimationFrame(tick);
 
 // ---------- start, sound, sell ----------
 $('startStars').textContent = stars ? `★ ${stars} · prices +${Math.round(STARS.priceBonus * stars * 100)}%` : 'Catch it. Cut it. Cook it. Sell it.';
+if (saved) {
+  $('startBtn').textContent = 'Continue your shack';
+  $('savedInfo').hidden = false;
+  $('savedInfo').textContent = `${g.built.size} things built · ${money(g.cash)} in your pocket`;
+  $('freshBtn').hidden = false;
+}
+// Starting over needs a second tap, so nobody wipes a save by accident
+$('freshBtn').addEventListener('click', () => {
+  if ($('freshBtn').dataset.armed !== '1') {
+    $('freshBtn').dataset.armed = '1';
+    $('freshBtn').textContent = 'Tap again to erase your shack (stars are kept)';
+    return;
+  }
+  try { localStorage.removeItem(SAVE_KEY); } catch { /* storage blocked */ }
+  scene.clear();
+  scene.add(hemi, sun, sun.target);
+  g = createGame(stars, (Date.now() % 100000) | 0);
+  view = createRenderer(g, scene, { popup });
+  if (window.game) window.game.g = g;
+  start();
+});
 function start() {
   unlock();
   $('start').classList.add('gone');
