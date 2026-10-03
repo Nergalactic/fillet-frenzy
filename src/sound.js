@@ -116,6 +116,13 @@ export const sfx = {
     if (!ok('sold', 1)) return;
     [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.25, vol: 0.14, delay: i * 0.12 }));
   },
+  horn() {
+    if (!ok('horn', 1)) return;
+    tone({ freq: 196, type: 'sawtooth', dur: 0.5, vol: 0.09, attack: 0.04 });
+    tone({ freq: 247, type: 'sawtooth', dur: 0.5, vol: 0.06, attack: 0.04 });
+    tone({ freq: 196, type: 'sawtooth', dur: 0.7, vol: 0.09, attack: 0.04, delay: 0.6 });
+    tone({ freq: 247, type: 'sawtooth', dur: 0.7, vol: 0.06, attack: 0.04, delay: 0.6 });
+  },
   arrive() {
     if (!ok('arrive', 0.5)) return;
     tone({ freq: 880, type: 'sine', dur: 0.08, vol: 0.05 });

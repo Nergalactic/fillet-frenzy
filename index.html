@@ -28,6 +28,7 @@
     #basket { font-size: 18px; padding: 3px 12px; border-radius: 12px; background: rgba(29,43,54,.45); }
     #basket.full { background: var(--coral); }
     #next { font-size: 16px; }
+    #boost { font-size: 15px; padding: 3px 12px; border-radius: 12px; background: rgba(255, 201, 77, .85); color: #fff; }
     #next.warn { color: var(--gold); font-size: 18px; animation: nudge 1s ease-in-out infinite; }
     @keyframes nudge { 50% { transform: scale(1.06); } }
 
@@ -73,6 +74,7 @@
     <div id="mid">
       <div id="basket" class="stroke">BASKET 0/8</div>
       <div id="next" class="stroke">Next: Grill</div>
+      <div id="boost" class="stroke" hidden></div>
     </div>
   </div>
   <div id="banner" class="stroke"><div id="bannerBig">GRILL BUILT!</div><div id="bannerSmall"></div></div>

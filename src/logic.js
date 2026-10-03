@@ -2,7 +2,7 @@
 // Rendering reads the state and the `events` list each frame.
 import {
   ITEMS, RECIPES, FISH, PLAYER, HELPER, CUSTOMERS, STARS, AREAS, PLACES,
-  STATIONS, SPOTS, TABLES, PADS, PADS_SHOWN, SELL_PAD, LEVELS, NAMES,
+  STATIONS, SPOTS, TABLES, PADS, PADS_SHOWN, SELL_PAD, LEVELS, NAMES, BOAT,
 } from './config.js';
 
 export const ZONE = 1.7;       // reach for drop/pick zones, spots and pads
@@ -47,6 +47,7 @@ export function createGame(stars = 0, seed = 7) {
     customers: [], custT: 1.5, custSeq: 0,
     built: new Set(), padPaid: {}, levels: {},
     squidCaught: false, sellT: 0,
+    boat: { state: 'away', t: BOAT.first, offer: null, hold: 0 }, boosts: { cash: 0, rush: 0 },
     events: [],
   };
   g.player = makeAgent('player', 'player', PLACES.start.x, PLACES.start.z);
@@ -385,7 +386,7 @@ function stepCustomers(g, dt) {
     const [it] = g.counter.splice(i, 1);
     g.regs[c.reg] = undefined;
     c.food = it;
-    const pay = ITEMS[it].price * g.mult;
+    const pay = ITEMS[it].price * g.mult * (g.boosts.cash > 0 ? 2 : 1);
     g.cashPile += pay;
     g.earned += pay;
     g.events.push({ type: 'move', item: it, from: 'counter', fromIndex: i, to: `customer:${c.id}` });
@@ -404,7 +405,7 @@ function stepCustomers(g, dt) {
       if (c.eatT <= 0) {
         const tb = g.tables[c.table];
         tb.state = 'dirty'; tb.plates = 1;
-        const tip = ITEMS[c.food].price * CUSTOMERS.tip * g.mult;
+        const tip = ITEMS[c.food].price * CUSTOMERS.tip * g.mult * (g.boosts.cash > 0 ? 2 : 1);
         g.cashPile += tip;
         g.earned += tip;
         g.events.push({ type: 'tip', amount: tip, table: tb.id });
@@ -479,7 +480,7 @@ function stepHelper(g, a, dt) {
   }
   if (a.mode === 'deliver') target = deliverTarget(g, a);
   const home = { x: PLACES.helperHome.x + (a.id.length % 3), z: PLACES.helperHome.z };
-  walk(a, target || home, a.speed, dt);
+  walk(a, target || home, a.speed * (g.boosts.rush > 0 ? 2 : 1), dt);
 }
 
 // ---------- main step ----------
@@ -494,4 +495,56 @@ export function step(g, dt) {
   }
   stepStations(g, dt);
   stepCustomers(g, dt);
+  stepBoat(g, dt);
+}
+
+// ---------- delivery boat ----------
+function stepBoat(g, dt) {
+  g.boosts.cash = Math.max(0, g.boosts.cash - dt);
+  g.boosts.rush = Math.max(0, g.boosts.rush - dt);
+  const b = g.boat;
+  if (b.state === 'away') {
+    b.t -= dt;
+    if (b.t <= 0) {
+      const offers = BOAT.offers.filter((o) => o.id !== 'upgrade' || upgradePads(g).length);
+      b.offer = offers[Math.floor(g.rng() * offers.length)];
+      b.state = 'docked'; b.t = BOAT.stay; b.hold = 0;
+      g.events.push({ type: 'boatArrive', offer: b.offer });
+    }
+  } else if (b.state === 'docked') {
+    b.t -= dt;
+    if (dist(g.player, BOAT.pad) < ZONE) {
+      b.hold += dt;
+      if (b.hold >= BOAT.hold) { b.state = 'claiming'; g.events.push({ type: 'boatClaim', offer: b.offer }); }
+    } else b.hold = 0;
+    if (b.state === 'docked' && b.t <= 0) { b.state = 'away'; b.t = BOAT.every; g.events.push({ type: 'boatLeave' }); }
+  }
+}
+
+// Called once the (optional) ad finishes. watched=false means no reward and the boat stays a little longer.
+export function claimBoat(g, watched) {
+  const b = g.boat;
+  if (b.state !== 'claiming') return;
+  if (!watched) { b.state = 'docked'; b.t = Math.max(b.t, 5); b.hold = -1; return; }
+  const o = b.offer;
+  let detail = o.label;
+  if (o.id === 'cash2x') g.boosts.cash = BOAT.boost;
+  if (o.id === 'rush') g.boosts.rush = BOAT.boost;
+  if (o.id === 'crate') {
+    const rate = g.t > 30 ? g.earned / g.t : 1;
+    const amount = Math.round(Math.max(60, rate * 90));
+    g.cash += amount;
+    detail = `+$${amount.toLocaleString()}`;
+    g.events.push({ type: 'cash', amount, from: 'boat', to: 'agent:player' });
+  }
+  if (o.id === 'upgrade') {
+    const ups = upgradePads(g);
+    if (ups.length) {
+      const u = ups.reduce((m, x) => (x.price < m.price ? x : m));
+      upgrade(g, u);
+      detail = `${u.name} to Lv ${u.level + 1}`;
+    }
+  }
+  g.events.push({ type: 'boatReward', offer: o, detail });
+  b.state = 'away'; b.t = BOAT.every; b.offer = null;
 }

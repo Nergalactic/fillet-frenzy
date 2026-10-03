@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { createGame, step, visiblePads, padPos, playerStuck, upgradePads } from './logic.js';
+import { createGame, step, visiblePads, padPos, playerStuck, upgradePads, claimBoat } from './logic.js';
 import { STARS } from './config.js';
 import { createRenderer } from './render.js';
 import { createInput } from './input.js';
 import { unlock, sfx, toggleMute, isMuted } from './sound.js';
+import { showRewardedAd } from './ads.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -79,6 +80,15 @@ function onEvent(e) {
       : 'Helpers carry more and move faster';
     banner(`${e.up.name.toUpperCase()} LV ${e.level}`, what);
   }
+  if (e.type === 'boatArrive') banner('DELIVERY BOAT!', `${e.offer.label}. It's docked by the pier for a little while.`, 3);
+  if (e.type === 'boatClaim') {
+    // Pause while the (optional) ad plays; reward only if it was watched to the end
+    running = false;
+    const shack = g;
+    showRewardedAd().then((watched) => { claimBoat(shack, watched); }, () => claimBoat(shack, false))
+      .finally(() => { running = true; clock.getDelta(); });
+  }
+  if (e.type === 'boatReward') banner('BONUS!', e.detail, 2.6);
   if (e.type === 'legend') {
     sfx.legend();
     banner('LEGENDARY CATCH!', 'Giant squid! A Sell the Shack pad just appeared by the tables.', 4.5);
@@ -130,6 +140,13 @@ function tick() {
     : g.squidCaught ? 'Sell the Shack when you are ready'
     : next ? `Next: ${next.label} · ${money(next.price)}` : 'Catch the giant squid at the end of the pier';
   if (bannerT > 0 && (bannerT -= dt) <= 0) $('banner').classList.remove('show');
+  const clockText = (s) => { const t = Math.ceil(s); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+  const chips = [];
+  if (g.boosts.cash > 0) chips.push(`2× CASH ${clockText(g.boosts.cash)}`);
+  if (g.boosts.rush > 0) chips.push(`STAFF RUSH ${clockText(g.boosts.rush)}`);
+  if (g.boat.state === 'docked') chips.push(`Boat at the pier · ${Math.ceil(g.boat.t)}s`);
+  $('boost').hidden = !chips.length;
+  $('boost').textContent = chips.join('  ·  ');
 
   // Camera follows the chef, pulling back a little on tall screens
   const portrait = Math.max(1, 1 / camera.aspect) ** 0.5;

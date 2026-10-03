@@ -55,9 +55,9 @@ export const STARS = {
 // Walkable areas. The pier grows as you buy extensions.
 export const AREAS = {
   beach:  { x0: -28, x1: 28, z0: -0.5, z1: 31 },
-  pier1:  { x0: -6,  x1: 6,  z0: -15, z1: 0 },
-  pier2:  { x0: -6,  x1: 6,  z0: -33, z1: -15 },
-  squid:  { x0: -9,  x1: 9,  z0: -45, z1: -33 },
+  pier1:  { x0: -11, x1: 11, z0: -18, z1: 0 },
+  pier2:  { x0: -11, x1: 11, z0: -38, z1: -18 },
+  squid:  { x0: -14, x1: 14, z0: -52, z1: -38 },
 };
 
 // Fixed places on the map.
@@ -81,11 +81,11 @@ export const STATIONS = {
 
 // Fishing spots sit on the pier's edge; `water` is where the line goes in.
 export const SPOTS = {
-  s1: { fish: 'sardine', x: 4.3,  z: -10, water: { x: 8.5, z: -10 },  up: { x: 1.0, z: -8.2 } },
-  s2: { fish: 'sardine', x: -4.3, z: -6,  water: { x: -8.5, z: -6 },  up: { x: -1.0, z: -4.0 } },
-  t1: { fish: 'tuna',    x: 4.3,  z: -28, water: { x: 8.5, z: -28 },  up: { x: 1.0, z: -26.2 } },
-  t2: { fish: 'tuna',    x: -4.3, z: -22, water: { x: -8.5, z: -22 }, up: { x: -1.0, z: -20.0 } },
-  sq: { fish: 'squid',   x: 0,    z: -41, water: { x: 0, z: -47 } },
+  s1: { fish: 'sardine', x: 9.3,  z: -11, water: { x: 13.5, z: -11 },  up: { x: 5.6, z: -11 } },
+  s2: { fish: 'sardine', x: -9.3, z: -7,  water: { x: -13.5, z: -7 },  up: { x: -5.6, z: -7 } },
+  t1: { fish: 'tuna',    x: 9.3,  z: -31, water: { x: 13.5, z: -31 },  up: { x: 5.6, z: -31 } },
+  t2: { fish: 'tuna',    x: -9.3, z: -25, water: { x: -13.5, z: -25 }, up: { x: -5.6, z: -25 } },
+  sq: { fish: 'squid',   x: 0,    z: -48, water: { x: 0, z: -55 } },
 };
 
 export const TABLES = {
@@ -102,22 +102,22 @@ export const PADS = [
   { id: 'tb2',     kind: 'table',   ref: 'tb2',   price: 40,   label: 'Table' },
   { id: 'basket1', kind: 'upgrade', ref: 'cap',   value: 12,   price: 80,   label: 'Bigger basket', x: -1, z: 4 },
   { id: 'fryer',   kind: 'station', ref: 'fryer', price: 140,  label: 'Fryer' },
-  { id: 'fisher1', kind: 'helper',  ref: 'fisher', spot: 's1', price: 180, label: 'Hire a fisher', x: 0, z: -12 },
+  { id: 'fisher1', kind: 'helper',  ref: 'fisher', spot: 's1', price: 180, label: 'Hire a fisher', x: 6, z: -15 },
   { id: 'tb3',     kind: 'table',   ref: 'tb3',   price: 120,  label: 'Table' },
   { id: 'shoes1',  kind: 'upgrade', ref: 'speed', value: 1.3, price: 160, label: 'Running shoes', x: -1, z: 9 },
-  { id: 'pier2',   kind: 'area',    ref: 'pier2', price: 350,  label: 'Extend the pier', x: 0, z: -13.8, then: 't1' },
+  { id: 'pier2',   kind: 'area',    ref: 'pier2', price: 350,  label: 'Extend the pier', x: 0, z: -16.5, then: 't1' },
   { id: 'cut2',    kind: 'station', ref: 'cut2',  price: 300,  label: 'Cutting board' },
   { id: 'runner',  kind: 'helper',  ref: 'runner', price: 450, label: 'Hire a kitchen runner', x: 1.5, z: 15 },
   { id: 'tb4',     kind: 'table',   ref: 'tb4',   price: 250,  label: 'Table' },
   { id: 'sushi',   kind: 'station', ref: 'sushi', price: 650,  label: 'Sushi bar' },
   { id: 't2',      kind: 'spot',    ref: 't2',    price: 550,  label: 'Tuna spot' },
   { id: 'server',  kind: 'helper',  ref: 'server', price: 700, label: 'Hire a server', x: -14, z: 20 },
-  { id: 'basket2', kind: 'upgrade', ref: 'cap',   value: 20,   price: 600,  label: 'Huge basket', x: -1, z: 14 },
+  { id: 'basket2', kind: 'upgrade', ref: 'cap',   value: 20,   price: 600,  label: 'Huge basket', x: -2, z: 18 },
   { id: 'tb5',     kind: 'table',   ref: 'tb5',   price: 450,  label: 'Table' },
   { id: 'busser',  kind: 'helper',  ref: 'busser', price: 600, label: 'Hire a busser', x: -22, z: 22 },
-  { id: 'fisher2', kind: 'helper',  ref: 'fisher', spot: 't1', price: 900, label: 'Hire a tuna fisher', x: 0, z: -30 },
+  { id: 'fisher2', kind: 'helper',  ref: 'fisher', spot: 't1', price: 900, label: 'Hire a tuna fisher', x: 6, z: -35 },
   { id: 'tb6',     kind: 'table',   ref: 'tb6',   price: 600,  label: 'Table' },
-  { id: 'squid',   kind: 'area',    ref: 'squid', price: 3000, label: 'Squid hole', x: 0, z: -31.8, then: 'sq' },
+  { id: 'squid',   kind: 'area',    ref: 'squid', price: 3000, label: 'Squid hole', x: 0, z: -36.5, then: 'sq' },
 ];
 export const PADS_SHOWN = 3;
 
@@ -129,7 +129,24 @@ export const LEVELS = {
   station: { speed: 0.8, buffer: 8, base: { cut: 50, grill: 80, fryer: 130, sushi: 350 } },
   counter: { base: 80, customers: 0.5, stock: 12, queue: 2, x: -25, z: 16.5 },
   spot:    { speed: 0.5, base: { sardine: 60, tuna: 250 } },
-  staff:   { base: 250, cap: 3, speed: 0.12, x: -14, z: 1.5 },
+  staff:   { base: 250, cap: 3, speed: 0.12, x: -15, z: 8.5 },
 };
+// The delivery boat: an optional bonus that docks now and then. Ignoring it costs nothing.
+export const BOAT = {
+  first: 80,               // seconds before the first visit
+  every: 140,              // seconds between visits
+  stay: 40,                // seconds it waits at the pier
+  dock: { x: -17.5, z: -4.2 },
+  pad: { x: -16.5, z: 0.8 },  // on the sand beside the pier, off the walking paths
+  hold: 0.7,               // seconds to stand on the pad before claiming
+  boost: 120,              // length of timed boosts, seconds
+  offers: [
+    { id: 'cash2x',  label: '2× cash for 2 minutes' },
+    { id: 'rush',    label: 'Staff rush: helpers 2× faster' },
+    { id: 'crate',   label: 'A crate of cash' },
+    { id: 'upgrade', label: 'A free upgrade' },
+  ],
+};
+
 export const NAMES = { cut: 'Cutting board', grill: 'Grill', fryer: 'Fryer', sushi: 'Sushi bar' };
 export const SELL_PAD = { x: -15, z: 26 };

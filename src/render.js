@@ -1,8 +1,9 @@
 // Draws the game state. Logic never touches Three.js; this file reads `g` and reacts to g.events.
 import * as THREE from 'three';
 import {
-  ITEMS, AREAS, PLACES, STATIONS, SPOTS, TABLES, STATION_LABELS, SELL_PAD,
+  ITEMS, AREAS, PLACES, STATIONS, SPOTS, TABLES, STATION_LABELS, SELL_PAD, BOAT,
 } from './config.js';
+import { ADS_ENABLED } from './ads.js';
 import { visiblePads, padPos, ZONE, TABLE_ZONE, upgradePads, level } from './logic.js';
 import * as M from './models.js';
 import { sfx } from './sound.js';
@@ -292,6 +293,33 @@ export function createRenderer(g, scene, { popup }) {
     }
   }
 
+  // Delivery boat
+  const boat = new THREE.Group();
+  M.part(boat, new THREE.BoxGeometry(5, 1.1, 2.4), 0xf4f1ea, 0, 0.1, 0);
+  M.part(boat, new THREE.BoxGeometry(5.05, 0.3, 2.45), 0xe63946, 0, -0.25, 0);
+  const bow = M.part(boat, new THREE.ConeGeometry(1.25, 1.6, 4), 0xf4f1ea, 3.2, 0.1, 0);
+  bow.rotation.z = -Math.PI / 2; bow.rotation.x = Math.PI / 4; bow.scale.set(1, 1, 0.68);
+  M.part(boat, new THREE.BoxGeometry(1.8, 1.3, 1.7), 0xffffff, -0.9, 1.3, 0);
+  M.part(boat, new THREE.BoxGeometry(2.0, 0.2, 1.9), 0x1d70b8, -0.9, 2.05, 0);
+  M.part(boat, new THREE.BoxGeometry(0.9, 0.5, 0.05), 0x9fd3e6, -0.9, 1.45, 0.86);
+  M.part(boat, new THREE.CylinderGeometry(0.18, 0.2, 0.9, 8), 0xe63946, -1.5, 2.5, 0);
+  for (const [x, z] of [[1.0, 0.5], [1.7, -0.4], [1.0, -0.5]]) M.part(boat, new THREE.BoxGeometry(0.7, 0.6, 0.7), 0xc8955c, x, 0.95, z);
+  M.part(boat, new THREE.CylinderGeometry(0.04, 0.04, 2.2, 5), 0xdddddd, 0.3, 1.9, 0);
+  M.part(boat, new THREE.BoxGeometry(0.05, 0.5, 0.8), 0xffd23f, 0.3, 2.75, 0.4);
+  boat.position.set(-45, -0.3, BOAT.dock.z);
+  boat.visible = false;
+  scene.add(boat);
+  let boatLabel = null, boatX = -45;
+  function setBoatLabel(offer) {
+    if (boatLabel) boat.remove(boatLabel);
+    boatLabel = sprite([{ text: 'DELIVERY BOAT', size: 56, color: '#1d70b8' }, { text: offer.label, size: 64 },
+      { text: ADS_ENABLED ? 'Watch an ad to claim' : 'Free! Stand on the gold pad', size: 48, color: '#2f7d32' }], 4.4, { h: 300 });
+    boatLabel.position.set(0, 4.4, 0);
+    boat.add(boatLabel);
+  }
+  const boatPad = makePad({ label: 'Claim bonus', price: null }, BOAT.pad, 0xffc94d, 2.4, 3.0, 1.9);
+  boatPad.grp.visible = false;
+
   // People
   const rigs = {};
   function rigFor(a) {
@@ -409,7 +437,7 @@ export function createRenderer(g, scene, { popup }) {
         const now = performance.now();
         if (now - (cashThrottle[k] || 0) < 45) break;
         cashThrottle[k] = now;
-        const from = e.from === 'cash' ? slotPos('cash') : slotPos(`agent:player`, g.player.stack.length).setY(1.6);
+        const from = e.from === 'cash' ? slotPos('cash') : e.from === 'boat' ? boat.position.clone().setY(1.5) : slotPos(`agent:player`, g.player.stack.length).setY(1.6);
         fly('cash', from, () => (e.to === 'agent:player' ? rigs.player.group.position.clone().setY(1.5) : slotPos(e.to)), 0.25);
         sfx.coin();
         break;
@@ -442,6 +470,8 @@ export function createRenderer(g, scene, { popup }) {
         break;
       }
       case 'arrive': sfx.arrive(); break;
+      case 'boatArrive': setBoatLabel(e.offer); sfx.horn(); break;
+      case 'boatReward': sfx.build(); puff(BOAT.pad, 0xffe7a3, 12, 0.5); break;
       case 'trash': popup('Tossed', new THREE.Vector3(PLACES.bin.x, 2.6, PLACES.bin.z), 'meh'); break;
       default: break;
     }
@@ -615,6 +645,18 @@ export function createRenderer(g, scene, { popup }) {
       setFill(upPads[u.key], Math.min(1, (g.padPaid[u.key] || 0) / u.price));
     }
     for (const k of Object.keys(upPads)) if (!upKeys.has(k)) { scene.remove(upPads[k].grp); delete upPads[k]; }
+    // Boat sails in, bobs at the dock, and sails off when it leaves
+    const docked = g.boat.state !== 'away';
+    boatX += ((docked ? BOAT.dock.x : -48) - boatX) * (1 - Math.exp(-dt * (docked ? 1.2 : 0.6)));
+    boat.visible = boatX > -46;
+    boat.position.set(boatX, -0.35 + Math.sin(time * 1.6) * 0.12, BOAT.dock.z);
+    boat.rotation.z = Math.sin(time * 1.3) * 0.04;
+    boat.rotation.y = docked ? 0 : Math.PI;
+    boatPad.grp.visible = g.boat.state === 'docked' || g.boat.state === 'claiming';
+    if (boatPad.grp.visible) {
+      setFill(boatPad, g.boat.state === 'claiming' ? 1 : Math.max(0, Math.min(1, g.boat.hold / BOAT.hold)));
+      boatPad.label.position.y = 1.9 + Math.sin(time * 4) * 0.12;
+    }
     sellPad.grp.visible = g.squidCaught;
     if (g.squidCaught) {
       const f = Math.min(1, Math.max(0, g.sellT) / 1.5);
