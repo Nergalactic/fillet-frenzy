@@ -120,6 +120,9 @@ export function createRenderer(g, scene, { popup }) {
   const bin = M.binModel();
   bin.position.set(PLACES.bin.x, 0, PLACES.bin.z);
   scene.add(bin);
+  const binLabel = sprite([{ text: 'TRASH', size: 80 }], 2.4, { bg: 'rgba(46,125,79,0.9)', fg: '#ffffff' });
+  binLabel.position.set(PLACES.bin.x, 2.4, PLACES.bin.z);
+  scene.add(binLabel);
   const binRing = ring(ZONE + 0.5, 0xb0b0b0, 0.5);
   binRing.position.set(PLACES.bin.x, 0.12, PLACES.bin.z);
   scene.add(binRing);
@@ -404,6 +407,7 @@ export function createRenderer(g, scene, { popup }) {
         break;
       }
       case 'arrive': sfx.arrive(); break;
+      case 'trash': popup('Tossed', new THREE.Vector3(PLACES.bin.x, 2.6, PLACES.bin.z), 'meh'); break;
       default: break;
     }
   }

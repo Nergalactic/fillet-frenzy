@@ -208,11 +208,14 @@ function interact(g, a, dt) {
         if (tb.plates <= 0) tb.state = 'free';
       }
     }
+    // The bin takes plates from anyone, and anything at all from the chef (the escape hatch for a jammed kitchen)
     if (dist(a, PLACES.bin) < ZONE + 0.5) {
-      const i = a.stack.lastIndexOf('plate');
+      let i = a.stack.lastIndexOf('plate');
+      if (i < 0 && a.kind === 'player') i = a.stack.length - 1;
       if (i >= 0 && ready()) {
-        a.stack.splice(i, 1);
-        g.events.push({ type: 'move', item: 'plate', from: `agent:${a.id}`, fromIndex: i, to: 'bin' });
+        const [it] = a.stack.splice(i, 1);
+        g.events.push({ type: 'move', item: it, from: `agent:${a.id}`, fromIndex: i, to: 'bin' });
+        if (it !== 'plate') g.events.push({ type: 'trash', item: it });
       }
     }
   }
@@ -248,6 +251,18 @@ function interact(g, a, dt) {
       g.events.push({ type: 'sell', stars: starsFor(g) });
     }
   } else if (g.sellT > 0) g.sellT = 0;
+}
+
+// True when the chef's basket is full and nothing they're carrying has anywhere to go.
+export function playerStuck(g) {
+  const a = g.player;
+  if (a.stack.length < a.cap) return false;
+  for (const it of a.stack) {
+    if (it === 'plate') return false;
+    if (sellable(it) && g.counter.length < COUNTER_MAX) return false;
+    if (Object.values(g.stations).some((s) => accepts(s, it) && s.inQ.length < BUFFER_MAX)) return false;
+  }
+  return true;
 }
 
 export function starsFor(g) {

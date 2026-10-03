@@ -4,7 +4,7 @@ The mobile ad loop, as the actual game. Run a fish shack on a pier: catch it, cu
 
 - **Fish:** stand at a fishing spot on the pier's edge and the catch stacks up on your back.
 - **Cut and cook:** drop raw fish on the cutting board (blue ring), grab fillets from the green ring, and feed them to the grill, fryer, or sushi bar.
-- **Sell:** drop food at the counter. Customers line up, buy what they came for (or settle for something else), and pay into a cash pile you walk over to collect.
+- **Sell:** drop food at the counter. The trash can next to it takes anything you need to get rid of, which is your way out if the kitchen jams up. Customers line up, buy what they came for (or settle for something else), and pay into a cash pile you walk over to collect.
 - **Build:** stand on a price pad and your cash pours in until the new thing pops up: stations, tables, fishing spots, a longer pier, bigger baskets, running shoes, and helpers (a fisher, kitchen runner, server, and busser) who gradually run the loop for you.
 - **Prestige:** the squid hole at the end of the pier holds the legendary giant squid. Catch one and a Sell the Shack pad appears. Selling earns stars (one, plus another per $25,000 earned that run), each worth +50% prices forever, and you start a new shack.
 

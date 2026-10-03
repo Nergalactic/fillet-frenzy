@@ -27,6 +27,8 @@
     #basket { font-size: 18px; padding: 3px 12px; border-radius: 12px; background: rgba(29,43,54,.45); }
     #basket.full { background: var(--coral); }
     #next { font-size: 16px; }
+    #next.warn { color: var(--gold); font-size: 18px; animation: nudge 1s ease-in-out infinite; }
+    @keyframes nudge { 50% { transform: scale(1.06); } }
 
     #banner { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%) scale(.6); opacity: 0; width: min(92vw, 560px);
       text-align: center; transition: transform .25s cubic-bezier(.3,1.6,.6,1), opacity .25s; pointer-events: none; }
@@ -58,7 +60,7 @@
     button.big { font-family: inherit; font-size: 24px; padding: 14px 30px; border-radius: 16px; border: 3px solid var(--ink);
       background: var(--mint); color: var(--ink); cursor: pointer; box-shadow: 0 5px 0 var(--ink); margin-top: 10px; }
     button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
-    @media (prefers-reduced-motion: reduce) { .pop { animation-duration: .01s; } #banner { transition: none; } }
+    @media (prefers-reduced-motion: reduce) { .pop { animation-duration: .01s; } #banner { transition: none; } #next.warn { animation: none; } }
   </style>
 </head>
 <body>

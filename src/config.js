@@ -64,7 +64,7 @@ export const AREAS = {
 export const PLACES = {
   start:   { x: 2, z: 10 },
   counter: { x: -20, z: 16, drop: { x: -20, z: 13.4 }, front: { x: -20, z: 18.6 }, cash: { x: -15.8, z: 13.4 } },
-  bin:     { x: -25, z: 6 },
+  bin:     { x: -26, z: 12 },
   shack:   { x: -21, z: 4.5 },
   enter:   { x: 30, z: 30 },
   helperHome: { x: -16, z: 5 },

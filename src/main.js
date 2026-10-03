@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createGame, step, visiblePads, padPos } from './logic.js';
+import { createGame, step, visiblePads, padPos, playerStuck } from './logic.js';
 import { STARS } from './config.js';
 import { createRenderer } from './render.js';
 import { createInput } from './input.js';
@@ -112,7 +112,10 @@ function tick() {
   $('basket').textContent = `BASKET ${g.player.stack.length}/${g.player.cap}`;
   $('basket').classList.toggle('full', g.player.stack.length >= g.player.cap);
   const next = visiblePads(g).reduce((m, p) => (!m || p.price < m.price ? p : m), null);
-  $('next').textContent = g.squidCaught ? 'Sell the Shack when you are ready'
+  const stuck = playerStuck(g);
+  $('next').classList.toggle('warn', stuck);
+  $('next').textContent = stuck ? 'Basket full and nowhere to put it? Dump extras in the trash'
+    : g.squidCaught ? 'Sell the Shack when you are ready'
     : next ? `Next: ${next.label} · ${money(next.price)}` : 'Catch the giant squid at the end of the pier';
   if (bannerT > 0 && (bannerT -= dt) <= 0) $('banner').classList.remove('show');
 
