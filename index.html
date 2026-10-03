@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Fillet Frenzy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet" />
+  <style>
+    :root { --ink: #1d2b36; --gold: #ffd23f; --mint: #7ee07e; --coral: #ff6b5a; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #8fd3f0;
+      touch-action: none; user-select: none; -webkit-user-select: none;
+      font-family: 'Lilita One', system-ui, sans-serif; color: #fff; }
+    canvas { display: block; }
+    [hidden] { display: none !important; }
+    .stroke { text-shadow: -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink), 2px 2px 0 var(--ink), 0 4px 0 var(--ink); }
+
+    #hud { position: fixed; inset: 0; pointer-events: none; padding: max(14px, env(safe-area-inset-top)) 16px 0; }
+    .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    #cash { font-size: 36px; color: var(--mint); line-height: 1; }
+    .right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    #stars { font-size: 28px; color: var(--gold); line-height: 1; }
+    #mute { pointer-events: auto; font-family: inherit; font-size: 12px; letter-spacing: 1px; padding: 5px 9px;
+      border-radius: 9px; border: 2px solid var(--ink); background: rgba(255,255,255,.85); color: var(--ink); cursor: pointer; }
+    #mid { margin: 8px auto 0; text-align: center; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+    #basket { font-size: 18px; padding: 3px 12px; border-radius: 12px; background: rgba(29,43,54,.45); }
+    #basket.full { background: var(--coral); }
+    #next { font-size: 16px; }
+
+    #banner { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%) scale(.6); opacity: 0; width: min(92vw, 560px);
+      text-align: center; transition: transform .25s cubic-bezier(.3,1.6,.6,1), opacity .25s; pointer-events: none; }
+    #banner.show { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    #bannerBig { font-size: clamp(32px, 10vw, 58px); color: var(--gold); line-height: 1.05; }
+    #bannerSmall { font-size: 18px; margin-top: 6px; }
+
+    .pop { position: fixed; font-size: 24px; pointer-events: none; transform: translate(-50%, -50%);
+      animation: pop 1s ease-out forwards; white-space: nowrap; }
+    .pop.money { color: var(--mint); }
+    .pop.meh { color: #d9f2d9; font-size: 20px; }
+    @keyframes pop { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -70px; } }
+
+    #stick { position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%;
+      border: 3px solid rgba(255,255,255,.8); background: rgba(255,255,255,.1); opacity: 0; transition: opacity .12s; pointer-events: none; }
+    #stick.on { opacity: 1; }
+    #knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; border-radius: 50%;
+      background: #3d4f66; border: 3px solid rgba(255,255,255,.9); transform: translate(-50%, -50%); }
+    #hint { position: fixed; bottom: max(24px, env(safe-area-inset-bottom)); width: 100%; text-align: center;
+      font-size: 18px; transition: opacity .6s; pointer-events: none; padding: 0 16px; }
+
+    .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; padding: 24px; text-align: center; background: rgba(13, 40, 60, .5); transition: opacity .35s; }
+    .overlay.gone { opacity: 0; pointer-events: none; }
+    #sold { display: none; }
+    #sold.show { display: flex; }
+    .title { font-size: clamp(48px, 15vw, 96px); color: var(--gold); line-height: .95; }
+    .sub { font-size: 20px; max-width: 420px; }
+    button.big { font-family: inherit; font-size: 24px; padding: 14px 30px; border-radius: 16px; border: 3px solid var(--ink);
+      background: var(--mint); color: var(--ink); cursor: pointer; box-shadow: 0 5px 0 var(--ink); margin-top: 10px; }
+    button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+    @media (prefers-reduced-motion: reduce) { .pop { animation-duration: .01s; } #banner { transition: none; } }
+  </style>
+</head>
+<body>
+  <div id="hud" hidden>
+    <div class="row">
+      <div id="cash" class="stroke">$0</div>
+      <div class="right"><div id="stars" class="stroke">★ 0</div><button id="mute">SOUND ON</button></div>
+    </div>
+    <div id="mid">
+      <div id="basket" class="stroke">BASKET 0/8</div>
+      <div id="next" class="stroke">Next: Grill</div>
+    </div>
+  </div>
+  <div id="banner" class="stroke"><div id="bannerBig">GRILL BUILT!</div><div id="bannerSmall"></div></div>
+  <div id="hint" class="stroke" hidden>Drag anywhere to walk. Stand at the pier's edge to fish.</div>
+  <div id="stick"><div id="knob"></div></div>
+  <div id="start" class="overlay stroke">
+    <div class="title">FILLET<br />FRENZY</div>
+    <div class="sub" id="startStars">Catch it. Cut it. Cook it. Sell it.</div>
+    <button class="big" id="startBtn">Open the shack</button>
+  </div>
+  <div id="sold" class="overlay stroke">
+    <div class="title" style="font-size: clamp(40px, 12vw, 80px)">SOLD THE SHACK!</div>
+    <div class="title" id="soldStars" style="font-size: 52px">+1 ★</div>
+    <div class="sub" id="soldText"></div>
+    <button class="big" id="again">Open a new shack</button>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
