@@ -217,6 +217,16 @@ export const PADS = [
 ];
 export const PADS_SHOWN = 3;
 
+// More staff. These pads stay on the map once the first of each job is hired, with no cap.
+// Each extra runner or busser costs LEVELS.growth times the last. Every fishing spot (except the
+// squid hole) can get one fisher; their pad sits just shoreward of the spot's upgrade pad.
+export const HIRES = {
+  runner: { base: 800, x: 1.5, z: 15, after: 'runner', name: 'runner' },
+  busser: { base: 900, x: -22, z: 22, after: 'busser', name: 'busser' },
+  server: { base: 1000, x: -14, z: 20, after: 'server', name: 'server' },
+  fisher: { mult: 3, dz: 3 },   // price = this times the spot's upgrade base
+};
+
 // Upgrade pads sit next to each station, the counter, each fishing spot, and the helpers' hangout.
 // They stay out of the build queue above. Levels never cap; each costs `growth` times the last.
 export const LEVELS = {

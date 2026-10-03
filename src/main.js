@@ -97,6 +97,11 @@ function onEvent(e) {
       : 'Helpers carry more and move faster';
     banner(`${e.up.name.toUpperCase()} LV ${e.level}`, what);
   }
+  if (e.type === 'hired') {
+    const what = e.up.hire === 'fisher' ? 'Fishes this spot and hauls the catch to the kitchen'
+      : e.up.hire === 'runner' ? 'Carries food between stations' : e.up.hire === 'server' ? 'Brings finished food to the counter' : 'Clears tables';
+    banner(`${e.up.name.replace(/^Hire an? /, '').toUpperCase()} HIRED!`, what);
+  }
   if (e.type === 'boatArrive') banner('DELIVERY BOAT!', `${e.offer.label}. It's docked by the pier for a little while.`, 3);
   if (e.type === 'boatClaim') {
     // Pause while the (optional) ad plays; reward only if it was watched to the end

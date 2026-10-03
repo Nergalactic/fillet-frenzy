@@ -2,7 +2,7 @@
 // Rendering reads the state and the `events` list each frame.
 import {
   ITEMS, RECIPES, FISH, PLAYER, HELPER, CUSTOMERS, STARS, AREAS, PLACES, CASHIER, PLATES, DOCK,
-  STATIONS, SPOTS, TABLES, PADS, PADS_SHOWN, SELL_PAD, LEVELS, NAMES, BOAT,
+  STATIONS, SPOTS, TABLES, PADS, PADS_SHOWN, SELL_PAD, LEVELS, NAMES, BOAT, HIRES,
 } from './config.js';
 
 export const ZONE = 1.7;       // reach for drop/pick zones, spots and pads
@@ -110,14 +110,18 @@ function build(g, p) {
     let x = PLACES.helperHome.x, z = PLACES.helperHome.z;
     if (p.ref === 'chef') { const c = STATIONS[p.station].chef; x = c.x; z = c.z; g.chefs.add(p.station); }
     if (p.ref === 'cashier') { const c = cashierPost(); x = c.x; z = c.z; g.cashier = true; }
-    const h = makeAgent(`${p.ref}${g.agents.length}`, p.ref, x, z, { spot: p.spot, station: p.station });
-    applyStaff(g, h);
-    g.agents.push(h);
+    hire(g, p.ref, x, z, { spot: p.spot, station: p.station });
   } else if (p.kind === 'upgrade') {
     if (p.ref === 'cap') g.player.cap = p.value;
     if (p.ref === 'speed') g.player.speedMult = p.value;
   }
   g.events.push({ type: 'built', pad: p });
+}
+function hire(g, kind, x, z, extra = {}) {
+  const h = makeAgent(`${kind}${g.agents.length}`, kind, x, z, extra);
+  applyStaff(g, h);
+  g.agents.push(h);
+  return h;
 }
 const cashierPost = () => ({ x: PLACES.counter.x + 1.6, z: PLACES.counter.z - 1.6 });
 
@@ -139,8 +143,31 @@ export function upgradePads(g) {
   add('counter', 'Counter', LEVELS.counter.base, LEVELS.counter);
   for (const s of Object.values(g.spots)) if (s.up) add(`spot:${s.id}`, `${ITEMS[s.fish].label} spot`, LEVELS.spot.base[s.fish], s.up);
   if (g.agents.some((a) => MOBILE.includes(a.kind))) add('staff', 'Staff training', LEVELS.staff.base, LEVELS.staff);
+  return out.concat(hirePads(g));
+}
+
+// Pads for extra staff. They ride along with the upgrade pads (same pay-and-hold rules) but hire someone.
+export function hirePads(g) {
+  const out = [];
+  for (const [kind, h] of Object.entries(HIRES)) {
+    if (!h.after || !g.built.has(h.after)) continue;
+    const n = level(g, `hire:${kind}`);   // 1 = no extras yet
+    out.push({ id: `hire:${kind}`, hire: kind, name: `Hire a ${h.name}`, label: `Hire ${h.name} #${n + 1}`,
+      level: n, price: cost(h.base, n), x: h.x, z: h.z, key: `hire:${kind}#${n}` });
+  }
+  // One fisher per spot. Spots whose fisher is still coming in the build queue wait for that.
+  const queued = new Set(PADS.filter((p) => p.ref === 'fisher' && !g.built.has(p.id)).map((p) => p.spot));
+  const manned = new Set(g.agents.filter((a) => a.kind === 'fisher').map((a) => a.spot));
+  for (const s of Object.values(g.spots)) {
+    if (!s.up || manned.has(s.id) || queued.has(s.id)) continue;
+    const pos = fisherPadPos(s);
+    out.push({ id: `hire:fisher:${s.id}`, hire: 'fisher', spot: s.id, name: `Hire a ${ITEMS[s.fish].label.toLowerCase()} fisher`,
+      label: `Hire a ${ITEMS[s.fish].label.toLowerCase()} fisher`, level: 1,
+      price: HIRES.fisher.mult * LEVELS.spot.base[s.fish], x: pos.x, z: pos.z, key: `hire:fisher:${s.id}#1` });
+  }
   return out;
 }
+export const fisherPadPos = (s) => ({ x: s.up.x, z: s.up.z + HIRES.fisher.dz });
 
 function applyStaff(g, a) {
   const lv = level(g, 'staff');
@@ -150,6 +177,12 @@ function applyStaff(g, a) {
 
 function upgrade(g, u) {
   g.levels[u.id] = u.level + 1;
+  if (u.hire) {
+    const home = PLACES.helperHome;
+    const a = hire(g, u.hire, u.hire === 'fisher' ? u.x : home.x, u.hire === 'fisher' ? u.z : home.z, u.spot ? { spot: u.spot } : {});
+    g.events.push({ type: 'hired', up: u, agent: a.id });
+    return;
+  }
   if (u.id === 'staff') for (const a of g.agents) if (a.kind !== 'player') applyStaff(g, a);
   g.events.push({ type: 'upgraded', up: u, level: u.level + 1 });
 }
@@ -186,6 +219,9 @@ export function canTake(g, st, item) {
 // Stations (other than `except`) that use this item as an ingredient
 const wantedBy = (g, item, except) => Object.values(g.stations).filter((s) => s !== except && s.type !== 'sink' && accepts(s, item));
 
+// Somewhere this item can go right now (so nobody grabs bread the roll station has no room for)
+const hasRoom = (g, item, from) => wantedBy(g, item, from).some((s) => canTake(g, s, item));
+
 const can = {
   fish: (a, spot) => a.kind === 'player' || (a.kind === 'fisher' && a.spot === spot.id),
   dropAt: (a, st) => a.kind === 'player'
@@ -193,10 +229,11 @@ const can = {
     || (a.kind === 'runner' && st.type !== 'sink')
     || (a.kind === 'busser' && st.type === 'sink'),
   pickFrom: (g, a, st, item) => a.kind === 'player'
-    || (a.kind === 'runner' && st.type !== 'sink' && wantedBy(g, item, st).length > 0)
-    || (a.kind === 'server' && sellable(item) && wantedBy(g, item, st).length === 0)
+    || (a.kind === 'runner' && st.type !== 'sink' && hasRoom(g, item, st))
+    || (a.kind === 'server' && sellable(item) && !hasRoom(g, item, st))
     || (a.kind === 'washer' && item === 'cleanPlate'),
-  counter: (a) => a.kind === 'player' || a.kind === 'server' || a.kind === 'washer',
+  // Runners serve food themselves when no station has room for it, instead of standing around holding it
+  counter: (a) => a.kind === 'player' || a.kind === 'server' || a.kind === 'washer' || a.kind === 'runner',
   plates: (a) => a.kind === 'player' || a.kind === 'busser',
 };
 
@@ -267,7 +304,8 @@ function interact(g, a, dt) {
 
   // Counter: food onto the counter, clean plates onto the rack
   if (can.counter(a) && dist(a, PLACES.counter.drop) < ZONE) {
-    const i = a.stack.findLastIndex((it) => (sellable(it) && a.kind !== 'washer' && g.counter.length < counterMax(g))
+    const i = a.stack.findLastIndex((it) => (sellable(it) && a.kind !== 'washer' && g.counter.length < counterMax(g)
+        && (a.kind !== 'runner' || !hasRoom(g, it)))
       || (it === 'cleanPlate' && g.plates < PLATES.rackMax));
     if (i >= 0 && ready()) {
       const [it] = a.stack.splice(i, 1);
@@ -312,11 +350,17 @@ function interact(g, a, dt) {
   // Build pads and upgrade pads. Cash only starts flowing after you've stood on a pad for a moment,
   // so walking across one on the way somewhere doesn't spend anything.
   let on = null;
-  for (const p of visiblePads(g)) if (dist(a, padPos(p)) <= ZONE) { on = { key: p.id, price: p.price, done: () => build(g, p) }; break; }
-  if (!on) for (const u of upgradePads(g)) if (dist(a, u) <= 1.3) { on = { key: u.key, price: u.price, done: () => upgrade(g, u) }; break; }
+  for (const p of visiblePads(g)) if (dist(a, padPos(p)) <= ZONE) { on = { key: p.id, price: p.price, done: () => build(g, p), lock: true }; break; }
+  if (!on) for (const u of upgradePads(g)) if (dist(a, u) <= 1.3) { on = { key: u.key, price: u.price, done: () => upgrade(g, u), lock: !!u.hire }; break; }
+  // After a build or a hire, step off before the next pad takes money. Otherwise the extra-hire pad that
+  // appears where you're standing would start charging right away. Upgrade pads still chain levels.
+  if (!on) g.padLock = false;
   if (on && on.key === g.padHold?.key) g.padHold.t += dt;
   else g.padHold = on ? { key: on.key, t: 0 } : null;
-  if (on && g.padHold.t >= PAD_HOLD && g.cash > 0 && payInto(g, a, on.key, on.price, dt)) on.done();
+  if (on && !g.padLock && g.padHold.t >= PAD_HOLD && g.cash > 0 && payInto(g, a, on.key, on.price, dt)) {
+    on.done();
+    if (on.lock) g.padLock = true;
+  }
 
   // Sell the shack
   if (g.squidCaught && dist(a, SELL_PAD) < ZONE) {
@@ -531,16 +575,22 @@ function best(a, list, ...keys) {
   }
   return pick;
 }
-function dropOff(g, a, wants) {
+// Where other staff of the same job are already headed, so a crew spreads out instead of piling onto one spot
+const claimed = (g, a) => new Set(g.agents.filter((b) => b !== a && b.kind === a.kind && b.goal).map((b) => b.goal));
+// Highest level first; among equals, the station with the shortest line (so the grill doesn't hog every
+// fillet while the fryer and smoker sit idle); then the nearest.
+function dropOff(g, a, wants, openOnly = false) {
   const all = Object.values(g.stations).filter((s) => s.in && can.dropAt(a, s) && a.stack.some((it) => wants(s, it)));
   const open = all.filter((s) => a.stack.some((it) => wants(s, it) && canTake(g, s, it)));
-  const st = best(a, open.map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s))
-    || best(a, all.map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s));
+  const st = best(a, open.map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s), (o) => -(o.s.inQ.length + (o.s.busy ? 1 : 0)))
+    || (!openOnly && best(a, all.map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s)));
   return st && st.s.in;
 }
 function pickUp(g, a) {
   const sources = Object.values(g.stations).filter((s) => s.outQ.length && can.pickFrom(g, a, s, s.outQ.at(-1)));
-  const st = best(a, sources.map((s) => ({ s, pos: s.out })), (o) => o.s.outQ.length, (o) => lv(g, o.s));
+  const taken = claimed(g, a);
+  const free = sources.filter((s) => !taken.has(s.out));
+  const st = best(a, (free.length ? free : sources).map((s) => ({ s, pos: s.out })), (o) => o.s.outQ.length, (o) => lv(g, o.s));
   return st && st.s.out;
 }
 
@@ -548,11 +598,21 @@ function pickUp(g, a) {
 export function collectTarget(g, a) {
   if (a.kind === 'fisher') return g.spots[a.spot];
   if (a.kind === 'runner' || a.kind === 'server' || a.kind === 'washer') return pickUp(g, a);
-  if (a.kind === 'busser') return nearest(a, Object.values(g.tables).filter((t) => t.state === 'dirty'));
+  if (a.kind === 'busser') {
+    const dirty = Object.values(g.tables).filter((t) => t.state === 'dirty');
+    const taken = claimed(g, a);
+    const free = dirty.filter((t) => !taken.has(t));
+    return nearest(a, free.length ? free : dirty);
+  }
   return null;
 }
 
 export function deliverTarget(g, a) {
+  if (a.kind === 'runner') {
+    const st = dropOff(g, a, (s, it) => accepts(s, it), true);
+    if (st) return st;
+    if (a.stack.some(sellable) && g.counter.length < counterMax(g)) return PLACES.counter.drop;
+  }
   if (a.kind === 'fisher' || a.kind === 'runner') return dropOff(g, a, (s, it) => accepts(s, it));
   if (a.kind === 'server' || a.kind === 'washer') return PLACES.counter.drop;
   if (a.kind === 'busser') {
@@ -574,6 +634,7 @@ function stepHelper(g, a, dt) {
     else target = src;
   }
   if (a.mode === 'deliver') target = deliverTarget(g, a);
+  a.goal = a.mode === 'collect' ? target || null : null;
   const home = { x: PLACES.helperHome.x + (a.id.length % 3), z: PLACES.helperHome.z };
   walk(a, target || home, a.speed * (g.boosts.rush > 0 ? 2 : 1), dt);
 }
@@ -602,7 +663,7 @@ function stepBoat(g, dt) {
   if (b.state === 'away') {
     b.t -= dt;
     if (b.t <= 0) {
-      const offers = BOAT.offers.filter((o) => o.id !== 'upgrade' || upgradePads(g).length);
+      const offers = BOAT.offers.filter((o) => o.id !== 'upgrade' || upgradePads(g).some((u) => !u.hire));
       b.offer = offers[Math.floor(g.rng() * offers.length)];
       b.state = 'docked'; b.t = BOAT.stay; b.hold = 0;
       g.events.push({ type: 'boatArrive', offer: b.offer });
@@ -634,7 +695,7 @@ export function claimBoat(g, watched) {
     g.events.push({ type: 'cash', amount, from: 'boat', to: 'agent:player' });
   }
   if (o.id === 'upgrade') {
-    const ups = upgradePads(g);
+    const ups = upgradePads(g).filter((u) => !u.hire);
     if (ups.length) {
       const u = ups.reduce((m, x) => (x.price < m.price ? x : m));
       upgrade(g, u);
@@ -674,7 +735,7 @@ export function serialize(g) {
     stations: Object.fromEntries(Object.values(g.stations).map((s) => [s.id, { inQ: s.inQ, outQ: s.outQ, busy: s.busy }])),
     tables: Object.fromEntries(Object.values(g.tables).map((t) => [t.id, { state: t.state === 'taken' ? 'free' : t.state, plates: t.plates }])),
     counter: g.counter,
-    agents: g.agents.map((a) => ({ kind: a.kind, x: a.x, z: a.z, stack: a.stack })),
+    agents: g.agents.map((a) => ({ kind: a.kind, spot: a.spot, x: a.x, z: a.z, stack: a.stack })),
     squidCaught: g.squidCaught, boosts: g.boosts, boatT: g.boat.state === 'away' ? g.boat.t : 30,
   };
 }
@@ -693,6 +754,16 @@ export function restore(raw) {
   g.plates = Math.min(PLATES.rackMax, num(data.plates)); g.dockT = num(data.dockT);
   g.padPaid = data.padPaid || {};
   g.levels = data.levels || {};
+  // Extra runners and bussers: one per level above 1. Extra fishers: one per spot with a hire level.
+  for (const kind of Object.keys(HIRES)) {
+    if (kind === 'fisher') continue;
+    for (let i = 1; i < level(g, `hire:${kind}`); i++) hire(g, kind, PLACES.helperHome.x, PLACES.helperHome.z);
+  }
+  for (const id of Object.keys(g.levels)) {
+    const m = id.match(/^hire:fisher:(.+)$/);
+    const s = m && g.spots[m[1]];
+    if (s && !g.agents.some((a) => a.kind === 'fisher' && a.spot === s.id)) hire(g, 'fisher', s.x, s.z, { spot: s.id });
+  }
   for (const [id, s] of Object.entries(data.stations || {})) {
     const st = g.stations[id];
     if (!st) continue;
@@ -704,9 +775,12 @@ export function restore(raw) {
     if (g.tables[id] && t.state === 'dirty') { g.tables[id].state = 'dirty'; g.tables[id].plates = num(t.plates, 1); }
   }
   g.counter = items(data.counter).filter(sellable).slice(0, counterMax(g));
-  (data.agents || []).forEach((s, i) => {
-    const a = g.agents[i];
-    if (!a || a.kind !== s.kind) return;
+  // Match saved staff to the rebuilt crew by job (and fishing spot), in order
+  const pool = [...g.agents];
+  (data.agents || []).forEach((s) => {
+    const i = pool.findIndex((a) => a.kind === s.kind && (s.spot === undefined || a.spot === s.spot));
+    if (i < 0) return;
+    const [a] = pool.splice(i, 1);
     a.x = num(s.x, a.x); a.z = num(s.z, a.z);
     a.stack = items(s.stack).slice(0, a.cap);
   });

@@ -505,6 +505,10 @@ export function createRenderer(g, scene, { popup }) {
       case 'tip':
         popup(`tip +$${Math.round(e.amount)}`, new THREE.Vector3(TABLES[e.table].x, 3, TABLES[e.table].z), 'money');
         break;
+      case 'hired':
+        sfx.build();
+        puff(e.up, 0xd8ffe0, 12, 0.5);
+        break;
       case 'upgraded': {
         sfx.build();
         puff(e.up, 0xcfe8ff, 10, 0.45);
@@ -735,7 +739,9 @@ export function createRenderer(g, scene, { popup }) {
     const upKeys = new Set(ups.map((u) => u.key));
     for (const u of ups) {
       if (!upPads[u.key]) {
-        upPads[u.key] = makePad({ label: `${u.name} Lv ${u.level + 1}`, price: u.price, bg: 'rgba(225,240,255,0.95)', priceColor: '#1f6feb' }, u, 0x8fd0ff, 2.0, 2.9, 1.8);
+        upPads[u.key] = u.hire
+          ? makePad({ label: u.label, price: u.price, bg: 'rgba(230,255,235,0.95)', priceColor: '#1a8f3c' }, u, 0x8fe3a0, 2.0, 2.9, 1.8)
+          : makePad({ label: `${u.name} Lv ${u.level + 1}`, price: u.price, bg: 'rgba(225,240,255,0.95)', priceColor: '#1f6feb' }, u, 0x8fd0ff, 2.0, 2.9, 1.8);
         pops.push({ obj: upPads[u.key].grp, t: 0 });
       }
       setFill(upPads[u.key], Math.min(1, (g.padPaid[u.key] || 0) / u.price));

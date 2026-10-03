@@ -7,6 +7,7 @@ The mobile ad loop, as the actual game. Run a fish shack on a pier: catch it, cu
 - **Cut and cook:** drop raw fish on the cutting board (blue ring), grab what comes out of the green ring, and feed it onward. Stations: cutting boards, grill, fryer, sushi bar, smoker (salmon), steam pot (crab and lobster), takoyaki griddle (octopus), plus a bakery that bakes bread on its own and a roll station that combines bread with steamed crab or lobster into the top-priced rolls.
 - **Sell:** drop food at the counter. The trash can next to it takes anything you need to get rid of, which is your way out if the kitchen jams up. Customers line up, buy what they came for (or settle for something else), and pay into a cash pile you walk over to collect.
 - **Build:** stand on a price pad and your cash pours in until the new thing pops up: stations, tables, fishing spots, a longer pier, bigger baskets, running shoes, and helpers who gradually run the loop for you: a fisher, kitchen runner, server, busser, and dishwasher, a chef for each main station (doubles its speed), a cashier (an extra register, plus VIP customers who pay 2.5×), and a fishing dock whose trawler drops off a crate of mixed fish every few seconds. Staff drop off at the highest-level station with room (nearest breaks ties) and pick up from whichever station has the most food waiting.
+- **More staff:** once you've hired your first runner, busser, or server, a green pad in the same spot hires another (each costs 1.8× the last, no cap). Every fishing spot except the squid hole has its own green pad to hire a fisher for it. After building or hiring, step off before the next pad takes money. Staff spread out so two runners don't chase the same pile, take food only when a station has room for it, and serve it at the counter if they get stuck holding it.
 - **Plates:** once the sink is built, the busser takes dirty plates there instead of the trash, the dishwasher carries clean ones to the rack by the counter, and every sale served on a plate earns 50% more. Without plates, food still sells at the normal price.
 - **Upgrade:** every station, the counter, each fishing spot, and your helpers have a small blue upgrade pad, with no level cap. Each level costs 1.8× the last. Stations work faster and hold more, the counter adds registers and draws more customers, spots bite faster, and staff training lets helpers carry more. Pads only take cash after you stand on them for a moment, so walking across one is free.
 - **Delivery boat:** every couple of minutes a boat docks beside the pier with an optional bonus (2× cash, a staff rush, a cash crate, or a free upgrade). Stand on its gold pad to claim it, or ignore it; it sails off with no penalty. Claims are free today. To use rewarded ads later, change `showRewardedAd()` in `src/ads.js` to call your ad SDK; the game pauses while it runs and only grants the bonus if the ad finishes.
@@ -25,6 +26,7 @@ npm run build    # static build in dist/
 npm run sim      # bot playthrough to the squid and the sale; add a star count: npm run sim -- 2
 node scripts/layout-check.mjs   # no overlapping stations, every pad reachable, every fishing line lands in water
 node scripts/save-test.mjs      # save round-trip plus loading an older-version save
+node scripts/staff-check.mjs    # staff only, everything built: shows every station gets used
 ```
 
 Every push to `main` deploys to GitHub Pages through `.github/workflows/deploy.yml`.
@@ -45,6 +47,7 @@ Controls: drag anywhere for a floating joystick, or WASD / arrow keys. Add `?pla
 | `scripts/sim.mjs` | Balance check: a bot plays from an empty shack to selling it |
 | `scripts/layout-check.mjs` | Layout sanity check for the map |
 | `scripts/save-test.mjs` | Save and migration check |
+| `scripts/staff-check.mjs` | Staff-only check that every station gets fed |
 | `scripts/preview.sh` | Builds a self-contained page for headless screenshot checks |
 
 ## Updating without breaking saves
@@ -57,8 +60,7 @@ The bot ignores the boat. On a first run it reaches the giant squid and sells:
 
 | Bot style | Time | Stars | Upgrades bought |
 | --- | --- | --- | --- |
-| No upgrades (`NO_UPGRADES=1`) | about 44 min | 2 | 0 |
-| Light upgrading (`UPRATIO=0.1`) | about 56 min | 2 | 98 |
-| Default (`UPRATIO=0.3`) | about 81 min | 3 | 147 |
+| No upgrades (`NO_UPGRADES=1`) | about 42 min | 2 | 0 |
+| Default (`UPRATIO=0.3`) | about 67 min | 3 | 147 |
 
 The early game is unchanged: the reef pier opens around the half-hour mark. Upgrading slows the bot down because it keeps spending instead of saving for the next build, but it ends with a much bigger shack and more stars. Add `RATE=1` to log income every five minutes.
