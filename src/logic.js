@@ -440,32 +440,42 @@ function nearest(a, list, pos = (x) => x) {
 }
 
 // Where a worker should go next: { x, z } or null to head home.
+// Staff choose stations by priority, then distance:
+//   dropping off  -> highest-level station with room (if all are full, wait at the best one)
+//   picking up    -> the station with the most finished food waiting, so piles never back up
+const lv = (g, st) => level(g, `st:${st.id}`);
+function best(a, list, ...keys) {
+  let pick = null, pickKey = null;
+  for (const it of list) {
+    const k = [...keys.map((f) => f(it)), -dist(a, it.pos || it)];
+    if (!pick || k.some((v, i) => k.slice(0, i).every((w, j) => w === pickKey[j]) && v > pickKey[i])) { pick = it; pickKey = k; }
+  }
+  return pick;
+}
+function dropOff(g, a, stations, wants) {
+  const open = stations.filter((s) => wants(s) && s.inQ.length < bufMax(g, s));
+  const st = best(a, open.map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s))
+    || best(a, stations.filter(wants).map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s));
+  return st && st.s.in;
+}
+function pickUp(g, a, stations) {
+  const st = best(a, stations.map((s) => ({ s, pos: s.out })), (o) => o.s.outQ.length, (o) => lv(g, o.s));
+  return st && st.s.out;
+}
+
+// Where a worker should go next: { x, z } or null to head home.
 export function collectTarget(g, a) {
   if (a.kind === 'fisher') return g.spots[a.spot];
-  if (a.kind === 'runner') {
-    const st = nearest(a, stationsOf(g, ['cut']).filter((s) => s.outQ.length && cookable(g, s.outQ.at(-1))));
-    return st && st.out;
-  }
-  if (a.kind === 'server') {
-    const st = nearest(a, Object.values(g.stations).filter((s) => s.outQ.length && can.pickFrom(g, a, s, s.outQ.at(-1))));
-    return st && st.out;
-  }
-  if (a.kind === 'busser') {
-    return nearest(a, Object.values(g.tables).filter((t) => t.state === 'dirty'));
-  }
+  if (a.kind === 'runner') return pickUp(g, a, stationsOf(g, ['cut']).filter((s) => s.outQ.length && cookable(g, s.outQ.at(-1))));
+  if (a.kind === 'server') return pickUp(g, a, Object.values(g.stations).filter((s) => s.outQ.length && can.pickFrom(g, a, s, s.outQ.at(-1))));
+  if (a.kind === 'busser') return nearest(a, Object.values(g.tables).filter((t) => t.state === 'dirty'));
   return null;
 }
 
 export function deliverTarget(g, a) {
-  if (a.kind === 'fisher') {
-    const st = nearest(a, stationsOf(g, ['cut']).filter((s) => s.inQ.length < bufMax(g, s)));
-    return st && st.in;
-  }
-  if (a.kind === 'runner') {
-    const st = nearest(a, stationsOf(g, cookers).filter((s) => s.inQ.length < bufMax(g, s) && a.stack.some((it) => accepts(s, it))));
-    return st && st.in;
-  }
-  if (a.kind === 'server') return g.counter.length < counterMax(g) ? PLACES.counter.drop : null;
+  if (a.kind === 'fisher') return dropOff(g, a, stationsOf(g, ['cut']), () => true);
+  if (a.kind === 'runner') return dropOff(g, a, stationsOf(g, cookers), (s) => a.stack.some((it) => accepts(s, it)));
+  if (a.kind === 'server') return PLACES.counter.drop;
   if (a.kind === 'busser') return PLACES.bin;
   return null;
 }
