@@ -13,21 +13,25 @@ for (let i = 0; i < 200; i++) {
 // Then hire a fisher for every spot and EXTRA more runners and bussers (default 2 each)
 const extra = Number(process.env.EXTRA ?? 2), want = { runner: extra, busser: extra, server: extra };
 for (let i = 0; i < 60; i++) {
-  const h = hirePads(g).find((u) => u.hire === 'fisher' || want[u.hire] > 0);
+  const h = hirePads(g).find((u) => (u.hire === 'fisher' && !process.env.NOHIRE) || (u.hire === 'chef' && !process.env.NOHIRE) || want[u.hire] > 0);
   if (!h) break;
-  if (h.hire !== 'fisher') want[h.hire]--;
+  if (want[h.hire] !== undefined) want[h.hire]--;
   p.x = h.x; p.z = h.z; g.cash = 1e7;
   for (let k = 0; k < 90; k++) step(g, 1 / 30);
   g.events.length = 0;
   p.x = -3; p.z = 25; step(g, 1 / 30);
 }
 p.x = -3; p.z = 25; g.cash = 0;
-const got = {}, made = {};
+const got = {}, made = {}, fisherTo = {};
+const kindOf = (id) => g.agents.find((a) => a.id === id)?.kind;
 const MIN = Number(process.env.MIN || 10);
 for (let k = 0; k < 30 * 60 * MIN; k++) {
   step(g, 1 / 30);
   for (const e of g.events) {
-    if (e.type === 'move' && e.to.startsWith('in:')) got[e.to.slice(3)] = (got[e.to.slice(3)] || 0) + 1;
+    if (e.type === 'move' && e.to.startsWith('in:')) {
+      got[e.to.slice(3)] = (got[e.to.slice(3)] || 0) + 1;
+      if (e.from.startsWith('agent:') && kindOf(e.from.slice(6)) === 'fisher') { const k = `${e.item} -> ${e.to.slice(3)}`; fisherTo[k] = (fisherTo[k] || 0) + 1; }
+    }
     if (e.type === 'move' && e.from.startsWith('out:')) made[e.from.slice(4)] = (made[e.from.slice(4)] || 0) + 1;
   }
   g.events.length = 0;
@@ -35,6 +39,7 @@ for (let k = 0; k < 30 * 60 * MIN; k++) {
 console.log('staff:', g.agents.map((a) => a.kind + (a.spot ? '@' + a.spot : '')).join(' '));
 console.log('station   fed  picked-up  in/out now');
 for (const s of Object.values(g.stations)) console.log(s.id.padEnd(9), String(got[s.id] || 0).padStart(4), String(made[s.id] || 0).padStart(9), `  ${s.inQ.length}/${s.outQ.length}`);
+console.log('fishers delivered:', Object.entries(fisherTo).map(([k, v]) => `${k} x${v}`).join(', '));
 console.log(`counter ${g.counter.length} items, ${g.customers?.length ?? '?'} customers`);
 console.log(`earned in ${MIN} min, staff only: $${Math.round(g.earned)}`);
 if (process.env.DEBUG) {

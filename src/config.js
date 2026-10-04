@@ -132,11 +132,11 @@ export const STATIONS = {
   grill:   { type: 'grill',   x: -8,  z: 4,  in: { x: -5.2, z: 4 },   out: { x: -10.8, z: 4 },  chef: { x: -8, z: 2.4 } },
   fryer:   { type: 'fryer',   x: -8,  z: 10, in: { x: -5.2, z: 10 },  out: { x: -10.8, z: 10 }, chef: { x: -8, z: 8.4 } },
   sushi:   { type: 'sushi',   x: 10,  z: 16, in: { x: 7.2, z: 16 },   out: { x: 12.8, z: 16 },  chef: { x: 10, z: 14.4 } },
-  smoker:  { type: 'smoker',  x: 22,  z: 4,  in: { x: 19.2, z: 4 },   out: { x: 24.8, z: 4 } },
-  steam:   { type: 'steam',   x: 22,  z: 10, in: { x: 19.2, z: 10 },  out: { x: 24.8, z: 10 } },
-  bakery:  { type: 'bakery',  x: 32,  z: 4,  in: null,                 out: { x: 34.8, z: 4 } },
+  smoker:  { type: 'smoker',  x: 22,  z: 4,  in: { x: 19.2, z: 4 },   out: { x: 24.8, z: 4 },   chef: { x: 22, z: 2.4 } },
+  steam:   { type: 'steam',   x: 22,  z: 10, in: { x: 19.2, z: 10 },  out: { x: 24.8, z: 10 },  chef: { x: 22, z: 8.4 } },
+  bakery:  { type: 'bakery',  x: 32,  z: 4,  in: null,                 out: { x: 34.8, z: 4 },   chef: { x: 32, z: 2.4 } },
   griddle: { type: 'griddle', x: 32,  z: 10, in: { x: 29.2, z: 10 },  out: { x: 34.8, z: 10 },  chef: { x: 32, z: 8.4 } },
-  roll:    { type: 'roll',    x: -8,  z: 16, in: { x: -5.2, z: 16 },  out: { x: -10.8, z: 16 } },
+  roll:    { type: 'roll',    x: -8,  z: 16, in: { x: -5.2, z: 16 },  out: { x: -10.8, z: 16 },  chef: { x: -8, z: 14.4 } },
   sink:    { type: 'sink',    x: -31, z: 8,  in: { x: -28.2, z: 8 },  out: { x: -33.8, z: 8 },  up: { x: -31, z: 5.3 } },
   dock:    { type: 'dock',    x: 16.5, z: -3, in: null,                out: { x: 16.5, z: 1.4 }, up: { x: 13.8, z: -0.2 } },
 };
@@ -225,7 +225,18 @@ export const HIRES = {
   busser: { base: 900, x: -22, z: 22, after: 'busser', name: 'busser' },
   server: { base: 1000, x: -14, z: 20, after: 'server', name: 'server' },
   fisher: { mult: 3, dz: 3 },   // price = this times the spot's upgrade base
+  // A chef for every cooking station that doesn't get one in the build queue. Doubles that station's speed.
+  // The pad sits beside the station. (The sink is run by the busser and dishwasher, the dock by its trawler.)
+  chef: {
+    cut2:   { price: 1500, x: 15.5, z: 7 },
+    smoker: { price: 2200, x: 22, z: 2.4 },
+    steam:  { price: 2800, x: 27.5, z: 7 },
+    bakery: { price: 3200, x: 32, z: 2.4 },
+    roll:   { price: 4500, x: -2.5, z: 13 },
+  },
 };
+export const CHEF_TITLES = { cut: 'prep chef', grill: 'grill chef', fryer: 'fry chef', sushi: 'sushi chef', smoker: 'smoker chef',
+  steam: 'steam cook', bakery: 'baker', roll: 'roll chef', griddle: 'takoyaki chef' };
 
 // Upgrade pads sit next to each station, the counter, each fishing spot, and the helpers' hangout.
 // They stay out of the build queue above. Levels never cap; each costs `growth` times the last.

@@ -13,7 +13,7 @@ for (let i = 0; i < 60; i++) {
   p.x = -3; p.z = 25; step(g, 1 / 30);   // step off before the next pad
 }
 // Extra hires: a couple of fishers, two more runners, one more busser and server
-const want = { fisher: 2, runner: 2, busser: 1, server: 1 };
+const want = { fisher: 2, runner: 2, busser: 1, server: 1, chef: 2 };
 for (let i = 0; i < 20; i++) {
   const h = hirePads(g).find((u) => want[u.hire] > 0); if (!h) break;
   want[h.hire]--; p.x = h.x; p.z = h.z; g.cash = 1e7;

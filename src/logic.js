@@ -2,7 +2,7 @@
 // Rendering reads the state and the `events` list each frame.
 import {
   ITEMS, RECIPES, FISH, PLAYER, HELPER, CUSTOMERS, STARS, AREAS, PLACES, CASHIER, PLATES, DOCK,
-  STATIONS, SPOTS, TABLES, PADS, PADS_SHOWN, SELL_PAD, LEVELS, NAMES, BOAT, HIRES,
+  STATIONS, SPOTS, TABLES, PADS, PADS_SHOWN, SELL_PAD, LEVELS, NAMES, BOAT, HIRES, CHEF_TITLES,
 } from './config.js';
 
 export const ZONE = 1.7;       // reach for drop/pick zones, spots and pads
@@ -150,6 +150,7 @@ export function upgradePads(g) {
 export function hirePads(g) {
   const out = [];
   for (const [kind, h] of Object.entries(HIRES)) {
+    if (kind === 'fisher' || kind === 'chef') continue;
     if (!h.after || !g.built.has(h.after)) continue;
     const n = level(g, `hire:${kind}`);   // 1 = no extras yet
     out.push({ id: `hire:${kind}`, hire: kind, name: `Hire a ${h.name}`, label: `Hire ${h.name} #${n + 1}`,
@@ -158,12 +159,23 @@ export function hirePads(g) {
   // One fisher per spot. Spots whose fisher is still coming in the build queue wait for that.
   const queued = new Set(PADS.filter((p) => p.ref === 'fisher' && !g.built.has(p.id)).map((p) => p.spot));
   const manned = new Set(g.agents.filter((a) => a.kind === 'fisher').map((a) => a.spot));
+  const stations = Object.values(g.stations);
   for (const s of Object.values(g.spots)) {
     if (!s.up || manned.has(s.id) || queued.has(s.id)) continue;
+    // Only once something in the kitchen takes this catch (a crab fisher with no steam pot would just stand around)
+    if (!stations.some((st) => accepts(st, s.fish))) continue;
     const pos = fisherPadPos(s);
     out.push({ id: `hire:fisher:${s.id}`, hire: 'fisher', spot: s.id, name: `Hire a ${ITEMS[s.fish].label.toLowerCase()} fisher`,
       label: `Hire a ${ITEMS[s.fish].label.toLowerCase()} fisher`, level: 1,
       price: HIRES.fisher.mult * LEVELS.spot.base[s.fish], x: pos.x, z: pos.z, key: `hire:fisher:${s.id}#1` });
+  }
+  // Chefs for the stations that don't get one in the build queue
+  for (const [id, c] of Object.entries(HIRES.chef)) {
+    const st = g.stations[id];
+    if (!st || g.chefs.has(id)) continue;
+    const title = CHEF_TITLES[st.type];
+    out.push({ id: `hire:chef:${id}`, hire: 'chef', station: id, name: `Hire a ${title}`, label: `Hire a ${title}`,
+      level: 1, price: c.price, x: c.x, z: c.z, key: `hire:chef:${id}#1` });
   }
   return out;
 }
@@ -179,7 +191,9 @@ function upgrade(g, u) {
   g.levels[u.id] = u.level + 1;
   if (u.hire) {
     const home = PLACES.helperHome;
-    const a = hire(g, u.hire, u.hire === 'fisher' ? u.x : home.x, u.hire === 'fisher' ? u.z : home.z, u.spot ? { spot: u.spot } : {});
+    const here = u.hire === 'fisher' || u.hire === 'chef';   // they start right where they'll work
+    const a = hire(g, u.hire, here ? u.x : home.x, here ? u.z : home.z, u.spot ? { spot: u.spot } : u.station ? { station: u.station } : {});
+    if (u.hire === 'chef') g.chefs.add(u.station);
     g.events.push({ type: 'hired', up: u, agent: a.id });
     return;
   }
@@ -221,6 +235,44 @@ const wantedBy = (g, item, except) => Object.values(g.stations).filter((s) => s 
 
 // Somewhere this item can go right now (so nobody grabs bread the roll station has no room for)
 const hasRoom = (g, item, from) => wantedBy(g, item, from).some((s) => canTake(g, s, item));
+
+// A station sitting idle until it gets this item (for the roll station: the ingredient it's missing)
+function starvedFor(g, item, from) {
+  return wantedBy(g, item, from).some((st) => {
+    if (st.busy || !canTake(g, st, item)) return false;
+    const r = RECIPES[st.type];
+    if (r.combo) {
+      const isWith = item === r.combo.with;
+      return !st.inQ.some((it) => (isWith ? it === r.combo.with : !!r.combo.makes[it]));
+    }
+    return st.inQ.length === 0;
+  });
+}
+// What this item is worth once a station with room turns it into food (bread counts as the roll it goes into)
+function worth(g, item, from) {
+  let v = 0;
+  for (const st of wantedBy(g, item, from)) {
+    if (!canTake(g, st, item)) continue;
+    const r = RECIPES[st.type];
+    const out = r.makes ? [r.makes[item]] : item === r.combo.with ? Object.values(r.combo.makes) : [r.combo.makes[item]];
+    for (const o of out) v = Math.max(v, ITEMS[o]?.price || 0);
+  }
+  return v;
+}
+// Which item in a pile this worker takes. Runners grab whatever an idle station is waiting on first
+// (even from the middle of a mixed pile like the dock's); everyone else takes from the top.
+function pickIndex(g, a, st) {
+  let top = -1, pick = -1, bestW = -1;
+  for (let i = st.outQ.length - 1; i >= 0; i--) {
+    const it = st.outQ[i];
+    if (!can.pickFrom(g, a, st, it)) continue;
+    if (a.kind !== 'runner') return i;
+    // Runners: the most valuable thing an idle station is waiting on, else the top of the pile
+    if (starvedFor(g, it, st)) { const w = worth(g, it, st); if (w > bestW) { bestW = w; pick = i; } }
+    if (top < 0) top = i;
+  }
+  return pick >= 0 ? pick : top;
+}
 
 const can = {
   fish: (a, spot) => a.kind === 'player' || (a.kind === 'fisher' && a.spot === spot.id),
@@ -293,11 +345,11 @@ function interact(g, a, dt) {
     }
     // Pick finished things up
     if (dist(a, st.out) < ZONE && st.outQ.length && room()) {
-      const it = st.outQ[st.outQ.length - 1];
-      if (can.pickFrom(g, a, st, it) && ready()) {
-        st.outQ.pop();
+      const i = a.kind === 'player' ? st.outQ.length - 1 : pickIndex(g, a, st);
+      if (i >= 0 && ready()) {
+        const [it] = st.outQ.splice(i, 1);
         a.stack.push(it);
-        g.events.push({ type: 'move', item: it, from: `out:${st.id}`, fromIndex: st.outQ.length, to: `agent:${a.id}` });
+        g.events.push({ type: 'move', item: it, from: `out:${st.id}`, fromIndex: i, to: `agent:${a.id}` });
       }
     }
   }
@@ -586,11 +638,16 @@ function dropOff(g, a, wants, openOnly = false) {
     || (!openOnly && best(a, all.map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s)));
   return st && st.s.in;
 }
+// Runners: first a pile holding something an idle station is waiting on (the most valuable such thing
+// wins, so lobster for the steam pot beats sardine fillets), then the biggest pile. Everyone else: the biggest pile.
 function pickUp(g, a) {
-  const sources = Object.values(g.stations).filter((s) => s.outQ.length && can.pickFrom(g, a, s, s.outQ.at(-1)));
+  const sources = Object.values(g.stations).map((s) => ({ s, pos: s.out, i: pickIndex(g, a, s) })).filter((o) => o.i >= 0);
   const taken = claimed(g, a);
-  const free = sources.filter((s) => !taken.has(s.out));
-  const st = best(a, (free.length ? free : sources).map((s) => ({ s, pos: s.out })), (o) => o.s.outQ.length, (o) => lv(g, o.s));
+  const free = sources.filter((o) => !taken.has(o.s.out));
+  const runner = a.kind === 'runner';
+  const urgent = (o) => (runner && starvedFor(g, o.s.outQ[o.i], o.s) ? 1 : 0);
+  const value = (o) => (runner && urgent(o) ? worth(g, o.s.outQ[o.i], o.s) : 0);
+  const st = best(a, free.length ? free : sources, urgent, value, (o) => o.s.outQ.length, (o) => lv(g, o.s));
   return st && st.s.out;
 }
 
@@ -735,7 +792,7 @@ export function serialize(g) {
     stations: Object.fromEntries(Object.values(g.stations).map((s) => [s.id, { inQ: s.inQ, outQ: s.outQ, busy: s.busy }])),
     tables: Object.fromEntries(Object.values(g.tables).map((t) => [t.id, { state: t.state === 'taken' ? 'free' : t.state, plates: t.plates }])),
     counter: g.counter,
-    agents: g.agents.map((a) => ({ kind: a.kind, spot: a.spot, x: a.x, z: a.z, stack: a.stack })),
+    agents: g.agents.map((a) => ({ kind: a.kind, spot: a.spot, station: a.station, x: a.x, z: a.z, stack: a.stack })),
     squidCaught: g.squidCaught, boosts: g.boosts, boatT: g.boat.state === 'away' ? g.boat.t : 30,
   };
 }
@@ -756,13 +813,15 @@ export function restore(raw) {
   g.levels = data.levels || {};
   // Extra runners and bussers: one per level above 1. Extra fishers: one per spot with a hire level.
   for (const kind of Object.keys(HIRES)) {
-    if (kind === 'fisher') continue;
+    if (kind === 'fisher' || kind === 'chef') continue;
     for (let i = 1; i < level(g, `hire:${kind}`); i++) hire(g, kind, PLACES.helperHome.x, PLACES.helperHome.z);
   }
   for (const id of Object.keys(g.levels)) {
     const m = id.match(/^hire:fisher:(.+)$/);
     const s = m && g.spots[m[1]];
     if (s && !g.agents.some((a) => a.kind === 'fisher' && a.spot === s.id)) hire(g, 'fisher', s.x, s.z, { spot: s.id });
+    const c = id.match(/^hire:chef:(.+)$/);
+    if (c && g.stations[c[1]] && !g.chefs.has(c[1])) { const p = STATIONS[c[1]].chef; hire(g, 'chef', p.x, p.z, { station: c[1] }); g.chefs.add(c[1]); }
   }
   for (const [id, s] of Object.entries(data.stations || {})) {
     const st = g.stations[id];
@@ -778,7 +837,7 @@ export function restore(raw) {
   // Match saved staff to the rebuilt crew by job (and fishing spot), in order
   const pool = [...g.agents];
   (data.agents || []).forEach((s) => {
-    const i = pool.findIndex((a) => a.kind === s.kind && (s.spot === undefined || a.spot === s.spot));
+    const i = pool.findIndex((a) => a.kind === s.kind && (s.spot === undefined || a.spot === s.spot) && (s.station === undefined || a.station === s.station));
     if (i < 0) return;
     const [a] = pool.splice(i, 1);
     a.x = num(s.x, a.x); a.z = num(s.z, a.z);

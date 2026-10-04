@@ -11,6 +11,7 @@ for (const [k, s] of Object.entries(STATIONS)) {
 }
 for (const [k, s] of Object.entries(SPOTS)) { add(k, s, 1.7); add(`${k} up`, s.up, 1.3); if (s.up) add(`${k} hire fisher`, fisherPadPos(s), 1.3); }
 for (const [k, h] of Object.entries(HIRES)) if (h.x !== undefined) add(`hire ${k}`, h, 1.3);
+for (const [k, c] of Object.entries(HIRES.chef)) add(`hire chef ${k}`, c, 1.3);
 for (const [k, t] of Object.entries(TABLES)) add(`table ${k}`, t, 2.6);
 for (const p of PADS) if (p.x !== undefined && !['station', 'spot', 'table'].includes(p.kind)) add(`pad ${p.id}`, p, 1.7);
 add('counter up', LEVELS.counter, 1.3); add('staff up', LEVELS.staff, 1.3); add('boat pad', BOAT.pad, 1.7);

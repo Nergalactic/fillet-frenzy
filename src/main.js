@@ -98,7 +98,8 @@ function onEvent(e) {
     banner(`${e.up.name.toUpperCase()} LV ${e.level}`, what);
   }
   if (e.type === 'hired') {
-    const what = e.up.hire === 'fisher' ? 'Fishes this spot and hauls the catch to the kitchen'
+    const what = e.up.hire === 'chef' ? 'Works the station at double speed'
+      : e.up.hire === 'fisher' ? 'Fishes this spot and hauls the catch to the kitchen'
       : e.up.hire === 'runner' ? 'Carries food between stations' : e.up.hire === 'server' ? 'Brings finished food to the counter' : 'Clears tables';
     banner(`${e.up.name.replace(/^Hire an? /, '').toUpperCase()} HIRED!`, what);
   }
