@@ -100,11 +100,16 @@ export function createRenderer(g, scene, { popup }) {
   const roof = M.part(shack, new THREE.ConeGeometry(5.6, 2.2, 4), 0x2a9d8f, 0, 4.7, 0);
   roof.rotation.y = Math.PI / 4; roof.scale.z = 0.7;
   M.part(shack, new THREE.BoxGeometry(1.4, 2.2, 0.1), 0x7a4a24, 1.8, 1.1, 2.22);
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 1.6), new THREE.MeshLambertMaterial({
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 1.6), new THREE.MeshBasicMaterial({
     map: labelTexture([{ text: 'FILLET FRENZY', size: 110 }], { bg: '#fff3d6', fg: '#d9480f', w: 1024, h: 256, radius: 40 }),
   }));
-  sign.position.set(0, 3.1, 2.25);
+  // Up on the roof, tilted toward the camera, so the eaves never hide it
+  sign.position.set(0, 6.9, 0.44);
+  sign.rotation.x = -0.7;
   shack.add(sign);
+  const board = M.part(shack, new THREE.BoxGeometry(6.6, 1.8, 0.12), 0x7a4a24, 0, 6.9, 0.36);
+  board.rotation.x = -0.7;
+  for (const x of [-2.4, 2.4]) M.part(shack, new THREE.BoxGeometry(0.22, 2.2, 0.22), 0x7a4a24, x, 5.4, 0.1);
   shack.position.set(PLACES.shack.x, 0, PLACES.shack.z);
   scene.add(shack);
 
