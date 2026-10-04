@@ -376,8 +376,10 @@ function interact(g, a, dt) {
         if (tb.plates <= 0) tb.state = 'free';
       }
     }
-    // The bin takes plates from anyone, and anything at all from the chef (the escape hatch for a jammed kitchen)
-    if (dist(a, PLACES.bin) < ZONE + 0.5) {
+    // The bin takes plates, and anything at all from the chef (the escape hatch for a jammed kitchen).
+    // Staff only use it when it's where they're headed (no sink, or the sink is full), never in passing.
+    const binOk = a.kind === 'player' || deliverTarget(g, a) === PLACES.bin;
+    if (binOk && dist(a, PLACES.bin) < ZONE + 0.5) {
       let i = a.stack.lastIndexOf('plate');
       if (i < 0 && a.kind === 'player') i = a.stack.length - 1;
       if (i >= 0 && ready()) {

@@ -117,7 +117,7 @@ export const AREAS = {
 export const PLACES = {
   start:   { x: 2, z: 10 },
   counter: { x: -20, z: 16, drop: { x: -20, z: 13.4 }, front: { x: -20, z: 18.6 }, cash: { x: -15.8, z: 13.4 } },
-  bin:     { x: -26, z: 12 },
+  bin:     { x: -36, z: 15 },   // tucked in the west corner, off every worker's route
   shack:   { x: -21, z: 4.5 },
   enter:   { x: -12, z: 34 },
   helperHome: { x: -16, z: 5 },

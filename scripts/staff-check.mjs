@@ -23,6 +23,7 @@ for (let i = 0; i < 60; i++) {
 }
 p.x = -3; p.z = 25; g.cash = 0;
 const got = {}, made = {}, fisherTo = {};
+let binned = 0;
 const kindOf = (id) => g.agents.find((a) => a.id === id)?.kind;
 const MIN = Number(process.env.MIN || 10);
 for (let k = 0; k < 30 * 60 * MIN; k++) {
@@ -32,6 +33,7 @@ for (let k = 0; k < 30 * 60 * MIN; k++) {
       got[e.to.slice(3)] = (got[e.to.slice(3)] || 0) + 1;
       if (e.from.startsWith('agent:') && kindOf(e.from.slice(6)) === 'fisher') { const k = `${e.item} -> ${e.to.slice(3)}`; fisherTo[k] = (fisherTo[k] || 0) + 1; }
     }
+    if (e.type === 'move' && e.to === 'bin') binned++;
     if (e.type === 'move' && e.from.startsWith('out:')) made[e.from.slice(4)] = (made[e.from.slice(4)] || 0) + 1;
   }
   g.events.length = 0;
@@ -40,6 +42,7 @@ console.log('staff:', g.agents.map((a) => a.kind + (a.spot ? '@' + a.spot : ''))
 console.log('station   fed  picked-up  in/out now');
 for (const s of Object.values(g.stations)) console.log(s.id.padEnd(9), String(got[s.id] || 0).padStart(4), String(made[s.id] || 0).padStart(9), `  ${s.inQ.length}/${s.outQ.length}`);
 console.log('fishers delivered:', Object.entries(fisherTo).map(([k, v]) => `${k} x${v}`).join(', '));
+console.log(`plates thrown in the trash by staff: ${binned}`);
 console.log(`counter ${g.counter.length} items, ${g.customers?.length ?? '?'} customers`);
 console.log(`earned in ${MIN} min, staff only: $${Math.round(g.earned)}`);
 if (process.env.DEBUG) {
