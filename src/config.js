@@ -164,7 +164,9 @@ export const TABLES = {
   tb7: { x: 26, z: 25 }, tb8: { x: 26, z: 19 },
 };
 
-// Build pads in unlock order. The next three unbuilt pads are on the map at any time.
+// Build pads. Every one is on the map from the start (buy in any order); the list order is just the
+// suggested path the 'Next' hint and prices follow. Pads out on an unbuilt pier show once it's built,
+// and a station's chef shows once the station exists.
 // kind: station | spot | table | helper | area | upgrade
 // Helpers: fisher (spot), runner, server, busser, chef (station), cashier, washer
 export const PADS = [
@@ -215,7 +217,7 @@ export const PADS = [
   { id: 'chef_griddle', kind: 'helper', ref: 'chef', station: 'griddle', price: 6500, label: 'Hire a takoyaki chef', x: 37, z: 13.5 },
   { id: 'squid',     kind: 'area',    ref: 'squid',  price: 15000, label: 'Squid hole', x: 0, z: -56.5, then: 'sq' },
 ];
-export const PADS_SHOWN = 3;
+export const PADS_SHOWN = Infinity;
 
 // More staff. These pads stay on the map once the first of each job is hired, with no cap.
 // Each extra runner or busser costs LEVELS.growth times the last. Every fishing spot (except the

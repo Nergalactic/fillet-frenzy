@@ -112,8 +112,9 @@ function build(g, p) {
     if (p.ref === 'cashier') { const c = cashierPost(g); x = c.x; z = c.z; g.cashier = true; }
     hire(g, p.ref, x, z, { spot: p.spot, station: p.station });
   } else if (p.kind === 'upgrade') {
-    if (p.ref === 'cap') g.player.cap = p.value;
-    if (p.ref === 'speed') g.player.speedMult = p.value;
+    // Bought in any order, so never step backwards (a Bigger basket after the Huge one changes nothing)
+    if (p.ref === 'cap') g.player.cap = Math.max(g.player.cap, p.value);
+    if (p.ref === 'speed') g.player.speedMult = Math.max(g.player.speedMult, p.value);
   }
   g.events.push({ type: 'built', pad: p });
 }
