@@ -92,7 +92,7 @@ function onEvent(e) {
   if (e.type === 'upgraded') {
     const id = e.up.id;
     const what = id.startsWith('st:') ? 'Works faster and holds more'
-      : id === 'counter' ? (e.level <= 3 ? 'New register! More customers, more room' : 'More customers, more room')
+      : id === 'counter' ? (e.level <= 3 || (e.level <= 12 && (e.level - 3) % 3 === 0) ? 'New register! More customers, more room' : 'More customers, more room')
       : id.startsWith('spot:') ? 'Fish bite faster'
       : 'Helpers carry more and move faster';
     banner(`${e.up.name.toUpperCase()} LV ${e.level}`, what);
@@ -100,7 +100,7 @@ function onEvent(e) {
   if (e.type === 'hired') {
     const what = e.up.hire === 'chef' ? 'Works the station at double speed'
       : e.up.hire === 'fisher' ? 'Fishes this spot and hauls the catch to the kitchen'
-      : e.up.hire === 'runner' ? 'Carries food between stations' : e.up.hire === 'server' ? 'Brings finished food to the counter' : 'Clears tables';
+      : e.up.hire === 'runner' ? 'Carries food between stations' : e.up.hire === 'server' ? 'Brings finished food to the counter' : e.up.hire === 'cashier' ? 'Opens another register' : 'Clears tables';
     banner(`${e.up.name.replace(/^Hire an? /, '').toUpperCase()} HIRED!`, what);
   }
   if (e.type === 'boatArrive') banner('DELIVERY BOAT!', `${e.offer.label}. It's docked by the pier for a little while.`, 3);

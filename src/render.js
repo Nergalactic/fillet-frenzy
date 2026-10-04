@@ -4,7 +4,7 @@ import {
   ITEMS, AREAS, PLACES, STATIONS, SPOTS, TABLES, STATION_LABELS, SELL_PAD, BOAT, FISH, DOCK, CASHIER,
 } from './config.js';
 import { ADS_ENABLED } from './ads.js';
-import { visiblePads, padPos, ZONE, TABLE_ZONE, upgradePads, level } from './logic.js';
+import { visiblePads, padPos, ZONE, TABLE_ZONE, upgradePads, level, registers, registerSlot, counterWidth } from './logic.js';
 import * as M from './models.js';
 import { sfx } from './sound.js';
 
@@ -308,15 +308,24 @@ export function createRenderer(g, scene, { popup }) {
     scene.add(b);
     badges[id] = b;
   }
+  // One register per checkout lane; the counter stretches to fit them
   const registerMeshes = [];
+  let shownRegs = 0;
   function syncRegisters() {
-    const want = Math.min(3, level(g, 'counter')) - 1;
+    const want = registers(g);
+    if (want === shownRegs) return;
+    shownRegs = want;
+    const w = counterWidth(want);
+    counter.children[0].scale.x = w / 5.2;
+    counter.children[1].scale.x = (w + 0.2) / 5.4;
+    for (const m of registerMeshes) counter.remove(m);
+    registerMeshes.length = 0;
     while (registerMeshes.length < want) {
-      const x = [0.1, 1.9][registerMeshes.length];
+      const x = registerSlot(registerMeshes.length, want).x - PLACES.counter.x;
       const r = new THREE.Group();
       M.part(r, new THREE.BoxGeometry(0.9, 0.5, 0.7), 0x5b6670, 0, 0.25, 0);
       M.part(r, new THREE.BoxGeometry(0.7, 0.35, 0.05), M.mat(0x5fd38a, { emissive: 0x1d6b3a }), 0, 0.38, 0.36, false);
-      r.position.set(x, 1.22, 0);
+      r.position.set(x, 1.22, 0.45);
       counter.add(r);
       registerMeshes.push(r);
       pops.push({ obj: r, t: 0 });
@@ -324,7 +333,7 @@ export function createRenderer(g, scene, { popup }) {
   }
 
   // Clean plates stack up on a little rack beside the counter
-  const rackBase = { x: PLACES.counter.x + 3.4, z: PLACES.counter.z + 0.2 };
+  const rackBase = { x: PLACES.counter.x + 7.2, z: PLACES.counter.z + 0.2 };   // past the end of the longest counter
   const rack = new THREE.Group();
   M.part(rack, new THREE.BoxGeometry(1.0, 0.9, 1.0), 0x9c6b3f, 0, 0.45, 0);
   rack.position.set(rackBase.x, 0, rackBase.z);
@@ -685,6 +694,7 @@ export function createRenderer(g, scene, { popup }) {
     }
 
     // Counter stock and cash
+    syncRegisters();
     syncPile(counterPile, g.counter, (m, i) => m.position.copy(counterSlot(i)), hide('counter'));
     const unit = 5 * g.mult;
     const bills = Math.min(64, Math.ceil(g.cashPile / unit - 1e-6));

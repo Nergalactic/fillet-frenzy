@@ -8,6 +8,7 @@ The mobile ad loop, as the actual game. Run a fish shack on a pier: catch it, cu
 - **Sell:** drop food at the counter. The trash can next to it takes anything you need to get rid of, which is your way out if the kitchen jams up. Customers line up, buy what they came for (or settle for something else), and pay into a cash pile you walk over to collect.
 - **Build:** stand on a price pad and your cash pours in until the new thing pops up: stations, tables, fishing spots, a longer pier, bigger baskets, running shoes, and helpers who gradually run the loop for you: a fisher, kitchen runner, server, busser, and dishwasher, a chef for each main station (doubles its speed), a cashier (an extra register, plus VIP customers who pay 2.5×), and a fishing dock whose trawler drops off a crate of mixed fish every few seconds. Staff drop off at the highest-level station with room (nearest breaks ties) and pick up from whichever station has the most food waiting.
 - **More staff:** once you've hired your first runner, busser, or server, a green pad in the same spot hires another (each costs 1.8× the last, no cap). Every fishing spot except the squid hole has its own green pad to hire a fisher for it (it shows up once the kitchen has a station that takes that catch). Every cooking station can get its own chef, who doubles its speed: some come in the build queue, the rest have a green pad beside the station. The sink is run by the busser and dishwasher, and the dock by its trawler. After building or hiring, step off before the next pad takes money. Runners first fetch whatever an idle station is waiting on (the most valuable such thing first, so the steam pot and roll station don't starve), then the biggest pile. Staff spread out so two runners don't chase the same pile, take food only when a station has room for it, and serve it at the counter if they get stuck holding it.
+- **Checkout:** each register has its own lane, supermarket style. Customers join the shortest one and the next person waits right behind the register, so sales aren't held up by people walking over from a long line. Extra cashiers (green pad, up to 2 more) each open another register.
 - **Plates:** once the sink is built, the busser takes dirty plates there instead of the trash, the dishwasher carries clean ones to the rack by the counter, and every sale served on a plate earns 50% more. Without plates, food still sells at the normal price.
 - **Upgrade:** every station, the counter, each fishing spot, and your helpers have a small blue upgrade pad, with no level cap. Each level costs 1.8× the last. Stations work faster and hold more, the counter adds registers and draws more customers, spots bite faster, and staff training lets helpers carry more. Pads only take cash after you stand on them for a moment, so walking across one is free.
 - **Delivery boat:** every couple of minutes a boat docks beside the pier with an optional bonus (2× cash, a staff rush, a cash crate, or a free upgrade). Stand on its gold pad to claim it, or ignore it; it sails off with no penalty. Claims are free today. To use rewarded ads later, change `showRewardedAd()` in `src/ads.js` to call your ad SDK; the game pauses while it runs and only grants the bonus if the ad finishes.
@@ -27,6 +28,7 @@ npm run sim      # bot playthrough to the squid and the sale; add a star count: 
 node scripts/layout-check.mjs   # no overlapping stations, every pad reachable, every fishing line lands in water
 node scripts/save-test.mjs      # save round-trip plus loading an older-version save
 node scripts/staff-check.mjs    # staff only, everything built: shows every station gets used
+node scripts/checkout-check.mjs # how many sales a fully stocked counter can ring up (LV=17 sets the counter level)
 ```
 
 Every push to `main` deploys to GitHub Pages through `.github/workflows/deploy.yml`.
@@ -48,6 +50,7 @@ Controls: drag anywhere for a floating joystick, or WASD / arrow keys. Add `?pla
 | `scripts/layout-check.mjs` | Layout sanity check for the map |
 | `scripts/save-test.mjs` | Save and migration check |
 | `scripts/staff-check.mjs` | Staff-only check that every station gets fed |
+| `scripts/checkout-check.mjs` | Checkout throughput check |
 | `scripts/preview.sh` | Builds a self-contained page for headless screenshot checks |
 
 ## Updating without breaking saves

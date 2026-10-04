@@ -224,6 +224,7 @@ export const HIRES = {
   runner: { base: 800, x: 1.5, z: 15, after: 'runner', name: 'runner' },
   busser: { base: 900, x: -22, z: 22, after: 'busser', name: 'busser' },
   server: { base: 1000, x: -14, z: 20, after: 'server', name: 'server' },
+  cashier: { base: 3000, x: -27, z: 22, after: 'cashier', name: 'cashier', max: 2 },   // each opens another register
   fisher: { mult: 3, dz: 3 },   // price = this times the spot's upgrade base
   // A chef for every cooking station that doesn't get one in the build queue. Doubles that station's speed.
   // The pad sits beside the station. (The sink is run by the busser and dishwasher, the dock by its trawler.)
@@ -246,7 +247,7 @@ export const LEVELS = {
     speed: 0.6, buffer: 8,
     base: { cut: 50, grill: 80, fryer: 130, sushi: 350, smoker: 200, steam: 300, bakery: 350, roll: 600, griddle: 700, sink: 200, dock: 700 },
   },
-  counter: { base: 80, customers: 0.4, stock: 12, queue: 2, x: -25, z: 16.5 },
+  counter: { base: 80, customers: 0.4, stock: 12, queue: 2, x: -26, z: 13 },
   spot:    { speed: 0.4, base: { sardine: 60, salmon: 120, tuna: 250, crab: 300, lobster: 600, octopus: 700 } },
   staff:   { base: 250, cap: 3, speed: 0.1, x: -3.5, z: 0.8 },
 };

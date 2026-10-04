@@ -109,7 +109,7 @@ function build(g, p) {
   } else if (p.kind === 'helper') {
     let x = PLACES.helperHome.x, z = PLACES.helperHome.z;
     if (p.ref === 'chef') { const c = STATIONS[p.station].chef; x = c.x; z = c.z; g.chefs.add(p.station); }
-    if (p.ref === 'cashier') { const c = cashierPost(); x = c.x; z = c.z; g.cashier = true; }
+    if (p.ref === 'cashier') { const c = cashierPost(g); x = c.x; z = c.z; g.cashier = true; }
     hire(g, p.ref, x, z, { spot: p.spot, station: p.station });
   } else if (p.kind === 'upgrade') {
     if (p.ref === 'cap') g.player.cap = p.value;
@@ -123,7 +123,12 @@ function hire(g, kind, x, z, extra = {}) {
   g.agents.push(h);
   return h;
 }
-const cashierPost = () => ({ x: PLACES.counter.x + 1.6, z: PLACES.counter.z - 1.6 });
+// Each cashier stands behind the register they opened (the ones after the counter's own)
+export function cashierPost(g, i = 0) {
+  const r = registers(g);
+  const s = registerSlot(Math.min(r - 1, counterRegisters(g) + i), r);
+  return { x: s.x, z: PLACES.counter.z - 1.6 };
+}
 
 // ---------- upgrades (no level cap) ----------
 export const level = (g, id) => g.levels[id] || 1;
@@ -153,6 +158,8 @@ export function hirePads(g) {
     if (kind === 'fisher' || kind === 'chef') continue;
     if (!h.after || !g.built.has(h.after)) continue;
     const n = level(g, `hire:${kind}`);   // 1 = no extras yet
+    if (h.max && n > h.max) continue;
+    if (kind === 'cashier' && registers(g) >= 8) continue;
     out.push({ id: `hire:${kind}`, hire: kind, name: `Hire a ${h.name}`, label: `Hire ${h.name} #${n + 1}`,
       level: n, price: cost(h.base, n), x: h.x, z: h.z, key: `hire:${kind}#${n}` });
   }
@@ -508,9 +515,15 @@ function stepDock(g, dt) {
 
 // ---------- customers ----------
 // Registers sit side by side along the counter; everyone else lines up behind the middle one.
-export const registers = (g) => Math.min(3, level(g, 'counter')) + (g.cashier ? 1 : 0);
-function registerSlot(i, r) { const f = PLACES.counter.front; return { x: f.x + (i - (r - 1) / 2) * 1.7, z: f.z }; }
-function lineSlot(j) { const f = PLACES.counter.front; return { x: f.x + Math.floor(j / 6) * 1.6, z: f.z + 2.3 + (j % 6) * 2.3 }; }
+// Registers: one per counter level up to 3, then one more every 3 levels up to 6, plus one per cashier (8 at most).
+// The counter grows longer to fit them.
+export const counterRegisters = (g) => { const lv = level(g, 'counter'); return lv <= 3 ? lv : Math.min(6, 3 + Math.floor((lv - 3) / 3)); };
+export const registers = (g) => Math.min(8, counterRegisters(g) + g.agents.filter((a) => a.kind === 'cashier').length);
+const regSpacing = (r) => (r <= 4 ? 1.7 : 1.35);
+export const counterWidth = (r) => Math.max(5.2, (r - 1) * regSpacing(r) + 1.8);
+export function registerSlot(i, r) { const f = PLACES.counter.front; return { x: f.x + (i - (r - 1) / 2) * regSpacing(r), z: f.z }; }
+// Place k in register i's lane: 0 is at the register, the rest queue straight back from it
+function laneSlot(i, r, k) { const s = registerSlot(i, r); return { x: s.x, z: s.z + (k ? 0.6 + 1.25 * k : 0) }; }
 
 function stepCustomers(g, dt) {
   const tables = Object.values(g.tables);
@@ -537,22 +550,22 @@ function stepCustomers(g, dt) {
     }
   }
 
-  // Each customer keeps the register they're sent to until they've bought something. VIPs go first.
+  // One lane per register, supermarket style: newcomers join the shortest lane and the next person
+  // stands right behind the register, so a sale isn't held up by someone walking over from a long line.
+  // VIPs step to the front of their lane.
   const regs = registers(g);
-  g.regs = g.regs || [];
-  for (let i = 0; i < regs; i++) {
-    if (g.regs[i] !== undefined && queued.some((c) => c.id === g.regs[i])) continue;
-    const next = queued.find((c) => c.reg === undefined && c.vip && c.arrived) || queued.find((c) => c.reg === undefined);
-    if (next) { next.reg = i; g.regs[i] = next.id; } else g.regs[i] = undefined;
+  const lanes = Array.from({ length: regs }, () => []);
+  for (const c of queued) {
+    if (c.reg === undefined || c.reg >= regs) c.reg = lanes.reduce((m, l, i) => (l.length < lanes[m].length ? i : m), 0);
+    lanes[c.reg].push(c);
   }
-  g.regs.length = regs;
-  let j = 0;
+  for (const l of lanes) l.sort((a, b) => (b.vip && b.arrived) - (a.vip && a.arrived) || a.id - b.id);
   const picky = CUSTOMERS.pickyFor / (1 + cl) / (g.cashier ? 2 : 1);
   queued.forEach((c) => {
-    if (c.reg !== undefined && c.reg >= regs) c.reg = undefined;
-    const slot = c.reg === undefined ? lineSlot(j++) : registerSlot(c.reg, regs);
+    const pos = lanes[c.reg].indexOf(c);
+    const slot = laneSlot(c.reg, regs, pos);
     if (walk(c, slot, CUSTOMERS.speed, dt)) c.arrived = true;
-    if (c.reg === undefined || dist(c, slot) > 0.4) return;
+    if (pos > 0 || dist(c, slot) > 0.4) return;
     c.waitT += dt;
     let i = g.counter.lastIndexOf(c.want);
     if (i < 0 && c.waitT > picky && g.counter.length) {
@@ -561,7 +574,6 @@ function stepCustomers(g, dt) {
     }
     if (i < 0) return;
     const [it] = g.counter.splice(i, 1);
-    g.regs[c.reg] = undefined;
     c.food = it;
     let pay = ITEMS[it].price * g.mult * (g.boosts.cash > 0 ? 2 : 1) * (c.vip ? CASHIER.vipPay : 1);
     const plated = g.plates > 0;
@@ -684,7 +696,7 @@ export function deliverTarget(g, a) {
 function stepHelper(g, a, dt) {
   // Station chefs and the cashier stay at their posts
   if (a.kind === 'chef') { walk(a, STATIONS[a.station].chef, a.speed, dt); a.working = !!g.stations[a.station]?.busy; return; }
-  if (a.kind === 'cashier') { walk(a, cashierPost(), a.speed, dt); return; }
+  if (a.kind === 'cashier') { walk(a, cashierPost(g, g.agents.filter((b) => b.kind === 'cashier').indexOf(a)), a.speed, dt); return; }
   if (a.mode === 'deliver' && !a.stack.length) a.mode = 'collect';
   let target;
   if (a.mode === 'collect') {
@@ -830,6 +842,7 @@ export function restore(raw) {
     if (!st) continue;
     st.inQ = items(s.inQ).filter((it) => accepts(st, it)).slice(0, bufMax(g, st));
     st.outQ = items(s.outQ).slice(0, bufMax(g, st));
+    // The dish that was mid-cook goes back to the front of the line (even if the line is already full)
     if (s.busy && accepts(st, s.busy)) st.inQ.unshift(s.busy);
   }
   for (const [id, t] of Object.entries(data.tables || {})) {

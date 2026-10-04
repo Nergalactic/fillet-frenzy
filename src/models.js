@@ -341,9 +341,7 @@ export function counterModel() {
   const g = new THREE.Group();
   part(g, box(5.2, 1.1, 1.6), 0x9c6b3f, 0, 0.55, 0);
   part(g, box(5.4, 0.12, 1.8), 0xe9d7b8, 0, 1.16, 0);
-  part(g, box(0.9, 0.5, 0.7), 0x5b6670, -1.9, 1.47, 0);
-  part(g, box(0.7, 0.35, 0.05), mat(0x5fd38a, { emissive: 0x1d6b3a }), -1.9, 1.6, 0.36, false);
-  return g;
+  return g;   // the renderer adds the registers and stretches the counter as more open
 }
 
 export function tableModel() {

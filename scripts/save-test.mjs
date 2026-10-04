@@ -28,15 +28,16 @@ const norm = (o) => {
   for (const [id, st] of Object.entries(x.stations)) { if (st.busy && id !== 'bakery') st.inQ.unshift(st.busy); st.busy = null; }
   return x;
 };
-const s1 = JSON.stringify(norm(serialize(g)));
-const g2 = restore(JSON.parse(s1), 0);
+const raw = JSON.stringify(serialize(g));
+const s1 = JSON.stringify(norm(JSON.parse(raw)));
+const g2 = restore(JSON.parse(raw), 0);
 const s2 = JSON.stringify(norm(serialize(g2)));
 console.log('built:', Object.keys(g.stations).length, 'stations,', g.agents.length, 'staff, areas', g.areas.join ? g.areas.join(',') : [...g.areas].join(','), 'plates', g.plates);
 console.log('staff', g.agents.length, 'restored staff', g2.agents.length);
 console.log('round-trip identical:', s1 === s2);
 if (s1 !== s2) { const a = JSON.parse(s1), b = JSON.parse(s2); for (const k in a) if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) console.log(' differs:', k); }
 // v1 save: older shape, squid built, no pier3
-const old = JSON.parse(s1); old.v = 1; old.built = (old.built || []).filter((x) => !['pier3', 'lb1'].includes(x));
+const old = JSON.parse(raw); old.v = 1; old.built = (old.built || []).filter((x) => !['pier3', 'lb1'].includes(x));
 const g3 = restore(old, 0);
 console.log('v1 migrated, has pier3:', [...(g3.areas || [])].includes('pier3'));
 for (let k = 0; k < 30 * 30; k++) { step(g3, 1 / 30); g3.events.length = 0; }
