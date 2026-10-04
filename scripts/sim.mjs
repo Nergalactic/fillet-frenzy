@@ -6,13 +6,20 @@ import { PLACES, RECIPES, SELL_PAD, ITEMS, PLATES } from '../src/config.js';
 
 const stars = Number(process.argv[2] || 0);
 const g = createGame(stars);
-const dt = 1 / 30, LIMIT = 120 * 60;
+const dt = 1 / 30, LIMIT = (process.env.SIMPLE ? 40 : 120) * 60;
 const p = g.player;
 const log = [], ups = [];
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const d = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const FISH_ORDER = ['squid', 'octopus', 'lobster', 'tuna', 'crab', 'salmon', 'sardine'];
 let fishingAt = null, sold = false;
+const SIMPLE_BUILD = new Set(['grill', 'cut2', 'fryer', 's2', 'fisher1', 'runner', 'server', 'busser', 'tb1', 'tb2', 'tb3', 'tb4', 'basket1']);
+const SIMPLE_MAX = { counter: 9, 'hire:runner': 5, 'hire:server': 3, 'hire:busser': 3, 'hire:fisher:s2': 2 };
+function SIMPLE_OK(key) {
+  if (!key.includes('#')) return SIMPLE_BUILD.has(key);
+  const [id, lv] = key.split('#');
+  return SIMPLE_MAX[id] !== undefined && Number(lv) < SIMPLE_MAX[id];
+}
 
 // What a station would turn this item into (for picking the most valuable destination)
 function outputOf(st, it) {
@@ -25,8 +32,11 @@ const value = (it) => (it && ITEMS[it]?.price) || 0;
 
 function target() {
   // Everything buyable: build pads plus (unless NO_UPGRADES) upgrade pads
-  const pads = visiblePads(g).map((x) => ({ key: x.id, price: x.price, pos: padPos(x) }))
+  let pads = visiblePads(g).map((x) => ({ key: x.id, price: x.price, pos: padPos(x) }))
     .concat(process.env.NO_UPGRADES ? [] : upgradePads(g).map((u) => ({ key: u.key, price: u.price, pos: u })));
+  // SIMPLE=1: just a small shack (two cutting boards, grill, fryer, Lv 9 counter, five runners, two fishers,
+  // a few bussers, servers, and tables). It can't reach the squid that way, so it runs 40 minutes and reports income.
+  if (process.env.SIMPLE) pads = pads.filter((x) => SIMPLE_OK(x.key));
   const left = (x) => x.price - (g.padPaid[x.key] || 0);
   // Like a sensible player: build things first, and take an upgrade when it's cheap next to the next build
   const builds = pads.filter((x) => !x.key.includes('#'));
@@ -90,6 +100,7 @@ while (g.t < LIMIT && !sold) {
   for (const e of g.events) {
     if (e.type === 'built') log.push(`${mmss(g.t).padStart(6)}  ${e.pad.label} ($${e.pad.price})`);
     if (e.type === 'upgraded') ups.push(`${e.up.name} ${e.level}`);
+    if (e.type === 'hired') ups.push(e.up.label || e.up.name);
     if (e.type === 'legend') log.push(`${mmss(g.t).padStart(6)}  ** GIANT SQUID CAUGHT **`);
     if (e.type === 'sell') { log.push(`${mmss(g.t).padStart(6)}  SOLD for ${e.stars} star(s), earned $${Math.round(g.earned)}`); sold = true; }
   }
@@ -98,5 +109,5 @@ while (g.t < LIMIT && !sold) {
 }
 console.log(`stars at start: ${stars}`);
 console.log(log.join('\n'));
-console.log(`\nupgrades bought: ${ups.length}`);
+console.log(`\nupgrades bought: ${ups.length}${process.env.SIMPLE ? " — " + ups.join(", ") : ""}`);
 if (!sold) console.log(`\nnot finished after ${mmss(g.t)}: cash $${Math.round(g.cash)}, pile $${Math.round(g.cashPile)}, earned $${Math.round(g.earned)}, next pads: ${visiblePads(g).map((x) => x.label).join(', ')}`);

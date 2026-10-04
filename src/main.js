@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createGame, step, visiblePads, padPos, playerStuck, upgradePads, claimBoat, serialize, restore } from './logic.js';
+import { createGame, step, visiblePads, padPos, playerStuck, upgradePads, claimBoat, serialize, restore, padsLeft } from './logic.js';
 import { STARS } from './config.js';
 import { createRenderer } from './render.js';
 import { createInput } from './input.js';
@@ -161,7 +161,8 @@ function tick() {
   $('next').classList.toggle('warn', stuck);
   $('next').textContent = stuck ? 'Basket full and nowhere to put it? Dump extras in the trash'
     : g.squidCaught ? 'Sell the Shack when you are ready'
-    : next ? `Next: ${next.label} · ${money(next.price)}` : 'Catch the giant squid at the end of the pier';
+    : g.built.has('squid') ? 'Catch the giant squid at the end of the pier'
+    : next ? `Next: ${next.label} · ${money(next.price)}${padsLeft(g) ? ` · ${padsLeft(g)} left to unlock the squid` : ''}` : 'Catch the giant squid at the end of the pier';
   if (bannerT > 0 && (bannerT -= dt) <= 0) $('banner').classList.remove('show');
   const clockText = (s) => { const t = Math.ceil(s); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
   const chips = [];

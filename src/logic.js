@@ -85,11 +85,15 @@ export function padPos(p) {
   return { x: src.x, z: src.z };
 }
 
+export const squidReady = (g) => PADS.every((q) => q.id === 'squid' || g.built.has(q.id));
+export const padsLeft = (g) => PADS.filter((q) => q.id !== 'squid' && !g.built.has(q.id)).length;
 export function visiblePads(g) {
   const out = [];
   for (const p of PADS) {
     if (g.built.has(p.id)) continue;
     if (p.kind === 'helper' && p.ref === 'chef' && !g.stations[p.station]) continue;
+    // The squid hole is the finale: it only opens once everything else on the build list is bought
+    if (p.id === 'squid' && !squidReady(g)) continue;
     const pos = padPos(p);
     if (!walkable(g, pos.x, pos.z)) continue;
     out.push(p);
