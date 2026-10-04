@@ -97,8 +97,13 @@ export function createRenderer(g, scene, { popup }) {
   // Shack with sign
   const shack = new THREE.Group();
   M.part(shack, new THREE.BoxGeometry(7, 3.6, 4.4), 0xd9a066, 0, 1.8, 0);
-  const roof = M.part(shack, new THREE.ConeGeometry(5.6, 2.2, 4), 0x2a9d8f, 0, 4.7, 0);
-  roof.rotation.y = Math.PI / 4; roof.scale.z = 0.7;
+  // A pyramid roof lined up with the walls: turn the 4-sided cone so its corners sit on the diagonals
+  // first (baked into the geometry), then stretch it to the walls plus a small overhang on every side
+  const roofGeo = new THREE.ConeGeometry(5.6, 2.2, 4);
+  roofGeo.rotateY(Math.PI / 4);
+  const roof = M.part(shack, roofGeo, 0x2a9d8f, 0, 4.7, 0);
+  const half = 5.6 / Math.SQRT2;          // half-width of the cone's square base once turned
+  roof.scale.set((3.5 + 0.45) / half, 1, (2.2 + 0.45) / half);
   M.part(shack, new THREE.BoxGeometry(1.4, 2.2, 0.1), 0x7a4a24, 1.8, 1.1, 2.22);
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 1.6), new THREE.MeshBasicMaterial({
     map: labelTexture([{ text: 'FILLET FRENZY', size: 110 }], { bg: '#fff3d6', fg: '#d9480f', w: 1024, h: 256, radius: 40 }),
