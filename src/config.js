@@ -82,6 +82,9 @@ export const CUSTOMERS = {
   baseEvery: 3.0,        // seconds between arrivals with no tables
   perTable: 0.5,         // each built table makes arrivals this much more frequent (divides the interval)
   minEvery: 0.8,
+  // Bigger orders: once the counter is a third full each customer buys 2 dishes, at two-thirds full 3,
+  // so a well-stocked counter sells down instead of leaving servers waiting to unload
+  orderAt: [1 / 3, 2 / 3],
   queueMax: 6,
   pickyFor: 1.5,         // seconds a customer holds out for their favourite before taking anything
   eatTime: 5,

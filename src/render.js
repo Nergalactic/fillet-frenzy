@@ -534,7 +534,7 @@ export function createRenderer(g, scene, { popup }) {
       }
       case 'sale':
         sfx.sale();
-        popup(`${e.vip ? 'VIP ' : ''}+$${Math.round(e.amount)}${e.plated ? ' plated' : ''}`, new THREE.Vector3(PLACES.counter.x, 3, PLACES.counter.z), e.vip ? 'money vip' : e.happy ? 'money' : 'money meh');
+        popup(`${e.vip ? 'VIP ' : ''}+$${Math.round(e.amount)}${e.dishes > 1 ? ` ×${e.dishes}` : ''}${e.plated ? ' plated' : ''}`, new THREE.Vector3(PLACES.counter.x, 3, PLACES.counter.z), e.vip ? 'money vip' : e.happy ? 'money' : 'money meh');
         break;
       case 'tip':
         popup(`tip +$${Math.round(e.amount)}`, new THREE.Vector3(TABLES[e.table].x, 3, TABLES[e.table].z), 'money');

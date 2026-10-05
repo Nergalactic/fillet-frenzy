@@ -22,6 +22,12 @@ for (let i = 0; i < 60; i++) {
   p.x = -3; p.z = 25; step(g, 1 / 30);
 }
 if (process.env.COUNTER) g.levels.counter = Number(process.env.COUNTER);
+// STATIONS=n / SPOTS=n set every station / fishing spot to level n (a fully upgraded kitchen)
+if (process.env.STATIONS) for (const st of Object.values(g.stations)) g.levels[`st:${st.id}`] = Number(process.env.STATIONS);
+if (process.env.SPOTS) for (const sp of Object.values(g.spots)) g.levels[`spot:${sp.id}`] = Number(process.env.SPOTS);
+// STATIONS=n sets every station to level n (faster, holds more); SPOTS=n does the same for fishing spots
+if (process.env.STATIONS) for (const st of Object.values(g.stations)) g.levels[`st:${st.id}`] = Number(process.env.STATIONS);
+if (process.env.SPOTS) for (const sp of Object.values(g.spots)) g.levels[`spot:${sp.id}`] = Number(process.env.SPOTS);
 // TABLES=n sets every table to level n (n seats, up to 6)
 if (process.env.TABLES) for (const t of Object.values(g.tables)) {
   g.levels[`tb:${t.id}`] = Number(process.env.TABLES);
@@ -29,7 +35,7 @@ if (process.env.TABLES) for (const t of Object.values(g.tables)) {
 }
 p.x = -3; p.z = 25; g.cash = 0;
 const got = {}, made = {}, fisherTo = {};
-let binned = 0, sales = 0, plated = 0, seated = 0, saleCash = 0, tipCash = 0;
+let dishes = 0, binned = 0, sales = 0, plated = 0, seated = 0, saleCash = 0, tipCash = 0;
 const sold = {};
 let frames = 0, fillSum = 0, fullFrames = 0, lineSum = 0, emptyFrames = 0;
 const kindOf = (id) => g.agents.find((a) => a.id === id)?.kind;
@@ -42,7 +48,7 @@ for (let k = 0; k < 30 * 60 * MIN; k++) {
       if (e.from.startsWith('agent:') && kindOf(e.from.slice(6)) === 'fisher') { const k = `${e.item} -> ${e.to.slice(3)}`; fisherTo[k] = (fisherTo[k] || 0) + 1; }
     }
     if (e.type === 'move' && e.to === 'bin') binned++;
-    if (e.type === 'sale') { sales++; saleCash += e.amount; if (e.plated) plated++; }
+    if (e.type === 'sale') { sales++; saleCash += e.amount; if (e.plated) plated++; dishes += e.dishes || 1; }
     if (e.type === 'tip') tipCash += e.amount;
     if (e.type === 'move' && e.from === 'counter') sold[e.item] = (sold[e.item] || 0) + 1;
     if (e.type === 'tip') seated++;
@@ -59,6 +65,7 @@ for (const s of Object.values(g.stations)) console.log(s.id.padEnd(9), String(go
 console.log('fishers delivered:', Object.entries(fisherTo).map(([k, v]) => `${k} x${v}`).join(', '));
 console.log(`plates thrown in the trash by staff: ${binned}`);
 console.log(`sale cash $${Math.round(saleCash)}, tips $${Math.round(tipCash)}, top sellers: ${Object.entries(sold).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => k + ' ' + v).join(', ')}`);
+console.log(`dishes sold ${dishes}`);
 console.log(`sales ${sales}, served on a plate ${plated} (${Math.round(100 * plated / Math.max(1, sales))}%), diners seated ${seated}`);
 console.log(`counter ${g.counter.length} items, ${g.customers?.length ?? '?'} customers`);
 console.log(`earned in ${MIN} min, staff only: $${Math.round(g.earned)}`);

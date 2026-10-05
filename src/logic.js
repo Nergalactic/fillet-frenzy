@@ -603,10 +603,22 @@ function stepCustomers(g, dt) {
     const free = tables.find((t) => t.seats.includes('free'));
     const plated = !!free && g.plates > 0;
     if (plated) { g.plates--; pay *= 1 + PLATES.bonus; }
+    g.events.push({ type: 'move', item: it, from: 'counter', fromIndex: i, to: `customer:${c.id}` });
+    // Bigger orders when food is piling up: extra dishes come from whatever there's most of on the counter
+    const fill = (g.counter.length + 1) / counterMax(g);
+    const extras = CUSTOMERS.orderAt.filter((f) => fill >= f).length;
+    for (let n = 0; n < extras && g.counter.length; n++) {
+      const counts = {};
+      for (const x of g.counter) counts[x] = (counts[x] || 0) + 1;
+      const most = Object.keys(counts).reduce((a, b) => (counts[b] > counts[a] ? b : a));
+      const j = g.counter.lastIndexOf(most);
+      g.counter.splice(j, 1);
+      pay += ITEMS[most].price * g.mult * (g.boosts.cash > 0 ? 2 : 1) * (c.vip ? CASHIER.vipPay : 1);
+      g.events.push({ type: 'move', item: most, from: 'counter', fromIndex: j, to: `customer:${c.id}` });
+    }
     g.cashPile += pay;
     g.earned += pay;
-    g.events.push({ type: 'move', item: it, from: 'counter', fromIndex: i, to: `customer:${c.id}` });
-    g.events.push({ type: 'sale', amount: pay, customer: c.id, happy: it === c.want, vip: c.vip, plated });
+    g.events.push({ type: 'sale', amount: pay, customer: c.id, happy: it === c.want, vip: c.vip, plated, dishes: 1 + extras });
     if (free) { const k = free.seats.indexOf('free'); free.seats[k] = 'taken'; c.table = free.id; c.seat = k; c.state = 'toTable'; }
     else c.state = 'leaving';
   });
