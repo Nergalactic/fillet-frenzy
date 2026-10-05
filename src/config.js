@@ -251,7 +251,7 @@ export const LEVELS = {
     speed: 0.6, buffer: 8,
     base: { cut: 50, grill: 80, fryer: 130, sushi: 350, smoker: 200, steam: 300, bakery: 350, roll: 600, griddle: 700, sink: 200, dock: 700 },
   },
-  counter: { base: 80, customers: 0.4, stock: 12, queue: 2, x: -26, z: 13 },
+  counter: { base: 80, customers: 0.4, stock: 24, queue: 2, x: -26, z: 13 },   // stock: extra dishes held per level (doubled from 12)
   spot:    { speed: 0.4, base: { sardine: 60, salmon: 120, tuna: 250, crab: 300, lobster: 600, octopus: 700 } },
   staff:   { base: 250, cap: 3, speed: 0.1, x: -3.5, z: 0.8 },
   // Tables seat one more diner per level up to `seats`; past that, each level adds `tip` to the tip share.

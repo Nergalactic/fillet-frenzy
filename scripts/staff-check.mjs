@@ -1,6 +1,6 @@
 // Staff-only check: build everything, park the player, and count what each station receives.
 // Every station with a supply should get used without the player's help.
-import { createGame, step, visiblePads, padPos, hirePads } from '../src/logic.js';
+import { createGame, step, visiblePads, padPos, hirePads, counterMax, registers } from '../src/logic.js';
 const g = createGame(0, Number(process.env.SEED || 1));
 const p = g.player;
 for (let i = 0; i < 200; i++) {
@@ -11,7 +11,7 @@ for (let i = 0; i < 200; i++) {
   p.x = -3; p.z = 25; step(g, 1 / 30);  // step off so the next pad can take money
 }
 // Then hire a fisher for every spot and EXTRA more runners and bussers (default 2 each)
-const extra = Number(process.env.EXTRA ?? 2), want = { runner: extra, busser: extra, server: extra, washer: Number(process.env.WASHERS ?? 0) };
+const extra = Number(process.env.EXTRA ?? 2), want = { runner: extra, busser: extra, server: Number(process.env.SERVERS ?? extra), washer: Number(process.env.WASHERS ?? 0) };
 for (let i = 0; i < 60; i++) {
   const h = hirePads(g).find((u) => (u.hire === 'fisher' && !process.env.NOHIRE) || (u.hire === 'chef' && !process.env.NOHIRE) || want[u.hire] > 0);
   if (!h) break;
@@ -31,6 +31,7 @@ p.x = -3; p.z = 25; g.cash = 0;
 const got = {}, made = {}, fisherTo = {};
 let binned = 0, sales = 0, plated = 0, seated = 0, saleCash = 0, tipCash = 0;
 const sold = {};
+let frames = 0, fillSum = 0, fullFrames = 0, lineSum = 0, emptyFrames = 0;
 const kindOf = (id) => g.agents.find((a) => a.id === id)?.kind;
 const MIN = Number(process.env.MIN || 10);
 for (let k = 0; k < 30 * 60 * MIN; k++) {
@@ -47,8 +48,11 @@ for (let k = 0; k < 30 * 60 * MIN; k++) {
     if (e.type === 'tip') seated++;
     if (e.type === 'move' && e.from.startsWith('out:')) made[e.from.slice(4)] = (made[e.from.slice(4)] || 0) + 1;
   }
+  frames++; fillSum += g.counter.length; if (g.counter.length >= counterMax(g)) fullFrames++; if (!g.counter.length) emptyFrames++;
+  lineSum += g.customers.filter((c) => c.state === 'queue' && c.arrived).length;
   g.events.length = 0;
 }
+console.log(`counter: holds ${counterMax(g)}, ${registers(g)} registers; on average ${Math.round(fillSum / frames)} dishes on it, full ${Math.round(100 * fullFrames / frames)}% of the time, empty ${Math.round(100 * emptyFrames / frames)}%, ${(lineSum / frames).toFixed(1)} customers waiting`);
 console.log('staff:', g.agents.map((a) => a.kind + (a.spot ? '@' + a.spot : '')).join(' '));
 console.log('station   fed  picked-up  in/out now');
 for (const s of Object.values(g.stations)) console.log(s.id.padEnd(9), String(got[s.id] || 0).padStart(4), String(made[s.id] || 0).padStart(9), `  ${s.inQ.length}/${s.outQ.length}`);

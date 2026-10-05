@@ -8,7 +8,7 @@ import {
 export const ZONE = 1.7;       // reach for drop/pick zones, spots and pads
 export const TABLE_ZONE = 2.6;
 export const BUFFER_MAX = 12;
-export const COUNTER_MAX = 24;
+export const COUNTER_MAX = 48;   // dishes the counter holds at Lv 1 (doubled from 24)
 const SELL_HOLD = 1.5;
 export const PAD_HOLD = 0.35;
 
