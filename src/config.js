@@ -158,10 +158,11 @@ export const SPOTS = {
   sq:  { fish: 'squid',   x: 0,    z: -68, water: { x: 0, z: -75 } },
 };
 
+// `up` is each table's upgrade pad (outside the ring of seats)
 export const TABLES = {
-  tb1: { x: -4, z: 25 }, tb2: { x: 2, z: 25 }, tb3: { x: 8, z: 25 },
-  tb4: { x: 14, z: 25 }, tb5: { x: 20, z: 25 }, tb6: { x: 20, z: 19 },
-  tb7: { x: 26, z: 25 }, tb8: { x: 26, z: 19 },
+  tb1: { x: -4, z: 25, up: { x: -4, z: 29 } }, tb2: { x: 2, z: 25, up: { x: 2, z: 29 } }, tb3: { x: 8, z: 25, up: { x: 8, z: 29 } },
+  tb4: { x: 14, z: 25, up: { x: 14, z: 29 } }, tb5: { x: 20, z: 25, up: { x: 20, z: 29 } }, tb6: { x: 20, z: 19, up: { x: 20, z: 15 } },
+  tb7: { x: 26, z: 25, up: { x: 26, z: 29 } }, tb8: { x: 26, z: 19, up: { x: 26, z: 15 } },
 };
 
 // Build pads. Every one is on the map from the start (buy in any order); the list order is just the
@@ -226,6 +227,7 @@ export const HIRES = {
   runner: { base: 800, x: 1.5, z: 15, after: 'runner', name: 'runner' },
   busser: { base: 900, x: -22, z: 22, after: 'busser', name: 'busser' },
   server: { base: 1000, x: -14, z: 20, after: 'server', name: 'server' },
+  washer: { base: 1200, x: -31, z: 12.5, after: 'washer', name: 'dishwasher' },   // keeps clean plates coming when tables seat more
   cashier: { base: 3000, x: -27, z: 22, after: 'cashier', name: 'cashier', max: 2 },   // each opens another register
   fisher: { mult: 3, dz: 3 },   // price = this times the spot's upgrade base
   // A chef for every cooking station that doesn't get one in the build queue. Doubles that station's speed.
@@ -252,6 +254,9 @@ export const LEVELS = {
   counter: { base: 80, customers: 0.4, stock: 12, queue: 2, x: -26, z: 13 },
   spot:    { speed: 0.4, base: { sardine: 60, salmon: 120, tuna: 250, crab: 300, lobster: 600, octopus: 700 } },
   staff:   { base: 250, cap: 3, speed: 0.1, x: -3.5, z: 0.8 },
+  // Tables seat one more diner per level up to `seats`; past that, each level adds `tip` to the tip share.
+  // Every diner eats off a plate and leaves it dirty, so more seats keep more plates moving through the sink.
+  table:   { base: 100, seats: 6, tip: 0.2 },
 };
 
 // The delivery boat: an optional bonus that docks now and then. Ignoring it costs nothing.

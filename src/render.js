@@ -4,7 +4,7 @@ import {
   ITEMS, AREAS, PLACES, STATIONS, SPOTS, TABLES, STATION_LABELS, SELL_PAD, BOAT, FISH, DOCK, CASHIER,
 } from './config.js';
 import { ADS_ENABLED } from './ads.js';
-import { visiblePads, padPos, ZONE, TABLE_ZONE, upgradePads, level, registers, registerSlot, counterWidth } from './logic.js';
+import { visiblePads, padPos, ZONE, TABLE_ZONE, upgradePads, level, registers, registerSlot, counterWidth, seatPos, tableDirty } from './logic.js';
 import * as M from './models.js';
 import { sfx } from './sound.js';
 
@@ -255,15 +255,30 @@ export function createRenderer(g, scene, { popup }) {
     const grp = M.tableModel();
     grp.position.set(t.x, 0, t.z);
     scene.add(grp);
-    const plate = M.item('plate');
-    plate.position.set(t.x, 1.02, t.z);
-    plate.visible = false;
+    // A dirty plate for every seat, shown in front of that seat when the diner leaves
+    const plates = [0, 1, 2, 3, 4, 5].map((k) => {
+      const m = M.item('plate');
+      const p = seatPos(t, k, 0.55);
+      m.position.set(p.x, 1.02, p.z);
+      m.visible = false;
+      scene.add(m);
+      return m;
+    });
     const r = ring(TABLE_ZONE, 0xff9f43, 0.6);
     r.position.set(t.x, 0.12, t.z);
     r.visible = false;
-    scene.add(plate, r);
-    tables[id] = { grp, plate, ring: r };
+    scene.add(r);
+    tables[id] = { grp, plates, ring: r, stools: 2 };
     pops.push({ obj: grp, t: 0 });
+  }
+  // The table model comes with stools for seats 0 and 1; add one for each seat past that
+  function syncStools(id, seats) {
+    const v = tables[id];
+    while (v.stools < seats) {
+      const p = seatPos({ x: 0, z: 0 }, v.stools, 1.3);
+      M.part(v.grp, new THREE.CylinderGeometry(0.35, 0.35, 0.55, 10), 0x4fa3c7, p.x, 0.27, p.z);
+      v.stools++;
+    }
   }
 
   // Counter stock and cash pile
@@ -448,7 +463,7 @@ export function createRenderer(g, scene, { popup }) {
       const r = custRigs[ref];
       return r ? r.group.localToWorld(new THREE.Vector3(0, 1.15, 0.5)) : counterSlot(0).clone();
     }
-    if (kind === 'table') return new THREE.Vector3(TABLES[ref].x, 1.05, TABLES[ref].z);
+    if (kind === 'table') { const [tb, k] = ref.split(':'); const p = seatPos(TABLES[tb], Number(k) || 0, 0.55); return new THREE.Vector3(p.x, 1.05, p.z); }
     if (kind === 'bin') return new THREE.Vector3(PLACES.bin.x, 1.3, PLACES.bin.z);
     if (kind === 'rack') return rackSlot(Math.max(0, g.plates - 1));
     if (kind === 'cash') return cashSlot(Math.max(0, cashBills.length - 1)).clone();
@@ -535,6 +550,7 @@ export function createRenderer(g, scene, { popup }) {
         if (id.startsWith('st:')) { const c = STATIONS[id.slice(3)]; badge(id, text, { x: c.x + 1.9, y: 3.1, z: c.z }); }
         else if (id === 'counter') { badge(id, text, { x: PLACES.counter.x + 2.3, y: 3.0, z: PLACES.counter.z }); syncRegisters(); }
         else if (id.startsWith('spot:')) { const s = SPOTS[id.slice(5)]; badge(id, text, { x: s.water.x, y: 3.3, z: s.water.z }); }
+        else if (id.startsWith('tb:')) { const t = TABLES[id.slice(3)]; badge(id, text, { x: t.x + 1.4, y: 3.6, z: t.z }); }
         break;
       }
       case 'built': {
@@ -694,8 +710,9 @@ export function createRenderer(g, scene, { popup }) {
     for (const [id, t] of Object.entries(g.tables)) {
       const v = tables[id];
       if (!v) continue;
-      v.plate.visible = t.state === 'dirty';
-      v.ring.visible = t.state === 'dirty';
+      syncStools(id, t.seats.length);
+      v.plates.forEach((m, k) => { m.visible = t.seats[k] === 'dirty'; });
+      v.ring.visible = tableDirty(t);
     }
 
     // Counter stock and cash
@@ -716,7 +733,7 @@ export function createRenderer(g, scene, { popup }) {
       r.group.position.set(c.x, 0, c.z);
       if (moving) turnToward(r, dx, dz, dt);
       else if (c.state === 'queue') turnToward(r, 0, -1, dt);
-      else if (c.state === 'eating') turnToward(r, 0, -1, dt);
+      else if (c.state === 'eating') turnToward(r, TABLES[c.table].x - c.x, TABLES[c.table].z - c.z, dt);   // face the table
       animateWalk(r, moving, dt, 10);
       r.bubble.visible = c.state === 'queue';
       const foodKey = c.food && hide(`customer:${c.id}`) === 0 ? c.food : null;
@@ -724,14 +741,15 @@ export function createRenderer(g, scene, { popup }) {
         if (r.food) { r.food.parent.remove(r.food); r.food = null; }
         if (foodKey) {
           r.food = M.item(foodKey);
-          if (c.state === 'eating') { r.food.position.set(TABLES[c.table].x, 1.02, TABLES[c.table].z + 0.4); scene.add(r.food); }
+          if (c.state === 'eating') { const p = seatPos(TABLES[c.table], c.seat, 0.55); r.food.position.set(p.x, 1.02, p.z); scene.add(r.food); }
           else { r.food.position.set(0, 1.15, 0.5); r.group.add(r.food); }
         }
         r.foodKey = foodKey;
       }
       if (c.state === 'eating' && r.food && r.food.parent !== scene) {
         r.group.remove(r.food);
-        r.food.position.set(TABLES[c.table].x, 1.02, TABLES[c.table].z + 0.4);
+        const p = seatPos(TABLES[c.table], c.seat, 0.55);
+        r.food.position.set(p.x, 1.02, p.z);
         scene.add(r.food);
       }
       if (c.food) { r.arms[0].rotation.x = -1.1; r.arms[1].rotation.x = -1.1; }

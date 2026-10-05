@@ -75,7 +75,7 @@ function target() {
   const outs = st.filter((s) => s.outQ.length).sort((a, b) => b.outQ.length - a.outQ.length);
   if (outs.length && !fishingAt && outs[0].outQ.length >= 3) return outs[0].out;
   if (!g.agents.some((a) => a.kind === 'busser')) {
-    const dirty = Object.values(g.tables).find((t) => t.state === 'dirty');
+    const dirty = Object.values(g.tables).find((t) => t.seats.includes('dirty'));
     if (dirty && !fishingAt) return dirty;
   }
   if (g.cashPile > 40 && !fishingAt) return PLACES.counter.cash;

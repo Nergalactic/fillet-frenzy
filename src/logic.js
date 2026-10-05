@@ -106,7 +106,7 @@ function build(g, p) {
   g.built.add(p.id);
   if (p.kind === 'station') g.stations[p.ref] = makeStation(p.ref);
   else if (p.kind === 'spot') g.spots[p.ref] = { id: p.ref, ...SPOTS[p.ref] };
-  else if (p.kind === 'table') g.tables[p.ref] = { id: p.ref, ...TABLES[p.ref], state: 'free', plates: 0 };
+  else if (p.kind === 'table') g.tables[p.ref] = { id: p.ref, ...TABLES[p.ref], seats: ['free'] };
   else if (p.kind === 'area') {
     g.areas.add(p.ref);
     if (p.then) g.spots[p.then] = { id: p.then, ...SPOTS[p.then] };
@@ -129,6 +129,19 @@ function hire(g, kind, x, z, extra = {}) {
   return h;
 }
 // Each cashier stands behind the register they opened (the ones after the counter's own)
+// ---------- tables ----------
+// Seats per table come from its level. Each seat is 'free', 'taken' (a diner is on the way or eating),
+// or 'dirty' (a plate waiting for the busser). Seat 0 faces the counter; more seats fill in around the table.
+export const seatCount = (g, t) => Math.min(LEVELS.table.seats, level(g, `tb:${t.id}`));
+const tipShare = (g, t) => CUSTOMERS.tip * (1 + LEVELS.table.tip * Math.max(0, level(g, `tb:${t.id}`) - LEVELS.table.seats));
+function fitSeats(g, t) { while (t.seats.length < seatCount(g, t)) t.seats.push('free'); }
+const SEAT_ANGLES = [90, 270, 30, 210, 150, 330].map((d) => (d * Math.PI) / 180);
+export function seatPos(t, k, r = 1.4) {
+  const a = SEAT_ANGLES[k % SEAT_ANGLES.length];
+  return { x: t.x + Math.cos(a) * r, z: t.z + Math.sin(a) * r };
+}
+export const tableDirty = (t) => t.seats.includes('dirty');
+
 export function cashierPost(g, i = 0) {
   const r = registers(g);
   const s = registerSlot(Math.min(r - 1, counterRegisters(g) + i), r);
@@ -152,6 +165,7 @@ export function upgradePads(g) {
   for (const st of Object.values(g.stations)) add(`st:${st.id}`, NAMES[st.type], LEVELS.station.base[st.type], st.up || { x: st.x, z: st.z + 2.7 });
   add('counter', 'Counter', LEVELS.counter.base, LEVELS.counter);
   for (const s of Object.values(g.spots)) if (s.up) add(`spot:${s.id}`, `${ITEMS[s.fish].label} spot`, LEVELS.spot.base[s.fish], s.up);
+  for (const t of Object.values(g.tables)) add(`tb:${t.id}`, 'Table', LEVELS.table.base, t.up);
   if (g.agents.some((a) => MOBILE.includes(a.kind))) add('staff', 'Staff training', LEVELS.staff.base, LEVELS.staff);
   return out.concat(hirePads(g));
 }
@@ -210,6 +224,7 @@ function upgrade(g, u) {
     return;
   }
   if (u.id === 'staff') for (const a of g.agents) if (a.kind !== 'player') applyStaff(g, a);
+  if (u.id.startsWith('tb:')) fitSeats(g, g.tables[u.id.slice(3)]);
   g.events.push({ type: 'upgraded', up: u, level: u.level + 1 });
 }
 
@@ -381,11 +396,11 @@ function interact(g, a, dt) {
   // Dirty tables and the bin
   if (can.plates(a)) {
     for (const tb of Object.values(g.tables)) {
-      if (tb.state === 'dirty' && dist(a, tb) < TABLE_ZONE && room() && ready()) {
-        tb.plates--;
+      const k = tb.seats.indexOf('dirty');
+      if (k >= 0 && dist(a, tb) < TABLE_ZONE && room() && ready()) {
+        tb.seats[k] = 'free';
         a.stack.push('plate');
-        g.events.push({ type: 'move', item: 'plate', from: `table:${tb.id}`, fromIndex: 0, to: `agent:${a.id}` });
-        if (tb.plates <= 0) tb.state = 'free';
+        g.events.push({ type: 'move', item: 'plate', from: `table:${tb.id}:${k}`, fromIndex: 0, to: `agent:${a.id}` });
       }
     }
     // The bin takes plates, and anything at all from the chef (the escape hatch for a jammed kitchen).
@@ -535,7 +550,9 @@ function stepCustomers(g, dt) {
   const queued = g.customers.filter((c) => c.state === 'queue');
   const cl = level(g, 'counter') - 1;
   const boost = 1 + LEVELS.counter.customers * cl;
-  const every = Math.max(CUSTOMERS.minEvery / boost, CUSTOMERS.baseEvery / (1 + CUSTOMERS.perTable * tables.length) / boost);
+  // Each table draws customers, and each extra seat at a table draws half as much again
+  const seats = tables.reduce((n, t) => n + 1 + 0.5 * (t.seats.length - 1), 0);
+  const every = Math.max(CUSTOMERS.minEvery / boost, CUSTOMERS.baseEvery / (1 + CUSTOMERS.perTable * seats) / boost);
   g.custT -= dt;
   if (g.custT <= 0) {
     g.custT = every;
@@ -581,27 +598,30 @@ function stepCustomers(g, dt) {
     const [it] = g.counter.splice(i, 1);
     c.food = it;
     let pay = ITEMS[it].price * g.mult * (g.boosts.cash > 0 ? 2 : 1) * (c.vip ? CASHIER.vipPay : 1);
-    const plated = g.plates > 0;
+    // Diners take a seat (and a clean plate from the rack if there is one, worth the plate bonus).
+    // Takeout customers just leave; they never use up a plate.
+    const free = tables.find((t) => t.seats.includes('free'));
+    const plated = !!free && g.plates > 0;
     if (plated) { g.plates--; pay *= 1 + PLATES.bonus; }
     g.cashPile += pay;
     g.earned += pay;
     g.events.push({ type: 'move', item: it, from: 'counter', fromIndex: i, to: `customer:${c.id}` });
     g.events.push({ type: 'sale', amount: pay, customer: c.id, happy: it === c.want, vip: c.vip, plated });
-    const free = tables.find((t) => t.state === 'free');
-    if (free) { free.state = 'taken'; c.table = free.id; c.state = 'toTable'; }
+    if (free) { const k = free.seats.indexOf('free'); free.seats[k] = 'taken'; c.table = free.id; c.seat = k; c.state = 'toTable'; }
     else c.state = 'leaving';
   });
 
   for (const c of g.customers) {
     if (c.state === 'toTable') {
       const tb = g.tables[c.table];
-      if (walk(c, { x: tb.x, z: tb.z + 1.4 }, CUSTOMERS.speed, dt)) { c.state = 'eating'; c.eatT = CUSTOMERS.eatTime; }
+      if (walk(c, seatPos(tb, c.seat), CUSTOMERS.speed, dt)) { c.state = 'eating'; c.eatT = CUSTOMERS.eatTime; }
     } else if (c.state === 'eating') {
       c.eatT -= dt;
       if (c.eatT <= 0) {
         const tb = g.tables[c.table];
-        tb.state = 'dirty'; tb.plates = 1;
-        const tip = ITEMS[c.food].price * CUSTOMERS.tip * g.mult * (g.boosts.cash > 0 ? 2 : 1) * (c.vip ? CASHIER.vipPay : 1);
+        // Every diner leaves a dirty plate, so seating more people puts more plates into circulation
+        tb.seats[c.seat] = 'dirty';
+        const tip = ITEMS[c.food].price * tipShare(g, tb) * g.mult * (g.boosts.cash > 0 ? 2 : 1) * (c.vip ? CASHIER.vipPay : 1);
         g.cashPile += tip;
         g.earned += tip;
         g.events.push({ type: 'tip', amount: tip, table: tb.id });
@@ -648,12 +668,20 @@ function best(a, list, ...keys) {
 }
 // Where other staff of the same job are already headed, so a crew spreads out instead of piling onto one spot
 const claimed = (g, a) => new Set(g.agents.filter((b) => b !== a && b.kind === a.kind && b.goal).map((b) => b.goal));
-// Highest level first; among equals, the station with the shortest line (so the grill doesn't hog every
-// fillet while the fryer and smoker sit idle); then the nearest.
+// The station that turns what they carry into the most valuable dish (so sardine fillets go to the fryer
+// for $18 fish and chips before the grill's $12 grilled sardine); then highest level; then the shortest
+// line; then the nearest. A cheaper station only gets food when the better one is full.
+const dishValue = (st, stack) => Math.max(0, ...stack.map((it) => {
+  const r = RECIPES[st.type];
+  if (r.makes) return ITEMS[r.makes[it]]?.price || 0;
+  if (r.combo) return it === r.combo.with ? Math.max(...Object.values(r.combo.makes).map((o) => ITEMS[o].price)) : ITEMS[r.combo.makes[it]]?.price || 0;
+  return 0;
+}));
 function dropOff(g, a, wants, openOnly = false) {
   const all = Object.values(g.stations).filter((s) => s.in && can.dropAt(a, s) && a.stack.some((it) => wants(s, it)));
   const open = all.filter((s) => a.stack.some((it) => wants(s, it) && canTake(g, s, it)));
-  const st = best(a, open.map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s), (o) => -(o.s.inQ.length + (o.s.busy ? 1 : 0)))
+  const fits = (s) => a.stack.filter((it) => wants(s, it) && canTake(g, s, it));
+  const st = best(a, open.map((s) => ({ s, pos: s.in })), (o) => dishValue(o.s, fits(o.s)), (o) => lv(g, o.s), (o) => -(o.s.inQ.length + (o.s.busy ? 1 : 0)))
     || (!openOnly && best(a, all.map((s) => ({ s, pos: s.in })), (o) => lv(g, o.s)));
   return st && st.s.in;
 }
@@ -675,7 +703,7 @@ export function collectTarget(g, a) {
   if (a.kind === 'fisher') return g.spots[a.spot];
   if (a.kind === 'runner' || a.kind === 'server' || a.kind === 'washer') return pickUp(g, a);
   if (a.kind === 'busser') {
-    const dirty = Object.values(g.tables).filter((t) => t.state === 'dirty');
+    const dirty = Object.values(g.tables).filter(tableDirty);
     const taken = claimed(g, a);
     const free = dirty.filter((t) => !taken.has(t));
     return nearest(a, free.length ? free : dirty);
@@ -809,7 +837,8 @@ export function serialize(g) {
     cash: g.cash, earned: g.earned, cashPile: g.cashPile, plates: g.plates, dockT: g.dockT,
     built: [...g.built], padPaid: g.padPaid, levels: g.levels,
     stations: Object.fromEntries(Object.values(g.stations).map((s) => [s.id, { inQ: s.inQ, outQ: s.outQ, busy: s.busy }])),
-    tables: Object.fromEntries(Object.values(g.tables).map((t) => [t.id, { state: t.state === 'taken' ? 'free' : t.state, plates: t.plates }])),
+    // Seats only: a diner who was on the way or eating is gone after a reload, so their seat comes back free
+    tables: Object.fromEntries(Object.values(g.tables).map((t) => [t.id, { seats: t.seats.map((s) => (s === 'taken' ? 'free' : s)) }])),
     counter: g.counter,
     agents: g.agents.map((a) => ({ kind: a.kind, spot: a.spot, station: a.station, x: a.x, z: a.z, stack: a.stack })),
     squidCaught: g.squidCaught, boosts: g.boosts, boatT: g.boat.state === 'away' ? g.boat.t : 30,
@@ -850,8 +879,12 @@ export function restore(raw) {
     // The dish that was mid-cook goes back to the front of the line (even if the line is already full)
     if (s.busy && accepts(st, s.busy)) st.inQ.unshift(s.busy);
   }
+  for (const t of Object.values(g.tables)) fitSeats(g, t);
   for (const [id, t] of Object.entries(data.tables || {})) {
-    if (g.tables[id] && t.state === 'dirty') { g.tables[id].state = 'dirty'; g.tables[id].plates = num(t.plates, 1); }
+    const tb = g.tables[id];
+    if (!tb) continue;
+    if (Array.isArray(t.seats)) t.seats.forEach((s, k) => { if (s === 'dirty' && k < tb.seats.length) tb.seats[k] = 'dirty'; });
+    else if (t.state === 'dirty') tb.seats[0] = 'dirty';   // saves from before seats existed
   }
   g.counter = items(data.counter).filter(sellable).slice(0, counterMax(g));
   // Match saved staff to the rebuilt crew by job (and fishing spot), in order
